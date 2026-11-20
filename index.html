@@ -3,126 +3,145 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>북 스캔 스튜디오 (모바일 단독 테스트)</title>
+  <title>북 스캔 스튜디오 v4 (OpenCV.js + 영역고정)</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
     body {
-      background: #000; color: #fff; font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-      height: 100dvh; display: flex; flex-direction: column; overflow: hidden;
+      background: #000; color: #fff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      height: 100dvh; display: flex; flex-direction: column; overflow: hidden; user-select: none;
+      touch-action: none;
     }
+
+    /* 상단 바 */
     .top-bar {
-      display: flex; justify-content: space-between; align-items: center; gap: 8px;
-      padding: 10px 12px; background: rgba(18, 18, 18, 0.95); z-index: 10;
+      display: flex; justify-content: space-between; align-items: center; gap: 6px;
+      padding: 8px 10px; background: rgba(15, 15, 18, 0.96); border-bottom: 1px solid #27272a; z-index: 20;
     }
-    .title-badge {
-      font-size: 13px; font-weight: bold; color: #93c5fd; white-space: nowrap;
+    .brand { font-size: 13px; font-weight: 700; color: #93c5fd; white-space: nowrap; }
+    .top-actions { display: flex; gap: 5px; flex-wrap: nowrap; }
+    .pill-btn {
+      background: #27272a; color: #e4e4e7; border: 1px solid #3f3f46;
+      border-radius: 8px; padding: 6px 9px; font-size: 11px; font-weight: 700; cursor: pointer;
+      white-space: nowrap; transition: background 0.15s;
     }
-    .top-actions { display: flex; gap: 6px; }
-    .mode-btn, .auto-btn {
-      background: #262626; color: #fff; border: 1px solid #444;
-      border-radius: 8px; padding: 7px 10px; font-size: 12px; font-weight: bold; cursor: pointer;
-    }
-    .mode-btn { background: #2563eb; border-color: #3b82f6; }
-    .auto-btn.active { background: #10b981; border-color: #34d399; color: #000; }
+    .pill-btn.active-blue { background: #2563eb; border-color: #3b82f6; color: #fff; }
+    .pill-btn.active-green { background: #10b981; border-color: #34d399; color: #052e16; }
+    .pill-btn.active-amber { background: #f59e0b; border-color: #fbbf24; color: #451a03; }
 
-    .auto-control-bar {
-      background: rgba(24, 24, 27, 0.95); border-bottom: 1px solid #333;
-      padding: 8px 14px; display: flex; flex-direction: column; gap: 6px; z-index: 10;
+    /* 상태 & 게이지 바 */
+    .status-bar {
+      background: rgba(24, 24, 27, 0.94); padding: 6px 12px;
+      display: flex; justify-content: space-between; align-items: center; gap: 10px;
+      border-bottom: 1px solid #27272a; z-index: 20;
     }
-    .auto-status-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
-    .auto-badge {
-      font-size: 12px; font-weight: bold; padding: 4px 10px; border-radius: 12px;
-      background: #333; color: #e5e7eb;
+    .status-pill {
+      font-size: 11.5px; font-weight: 700; padding: 4px 10px; border-radius: 999px;
+      background: #27272a; color: #d4d4d8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     }
-    .auto-badge.waiting { background: #1e3a8a; color: #93c5fd; }
-    .auto-badge.moving { background: #78350f; color: #fcd34d; }
-    .auto-badge.stabilizing { background: #065f46; color: #6ee7b7; }
-    .auto-badge.paused { background: #4b5563; color: #d1d5db; }
-    .pause-btn {
-      background: #374151; color: #fff; border: 1px solid #4b5563;
-      border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer;
-    }
-    .auto-slider-row { display: flex; align-items: center; gap: 10px; font-size: 12px; color: #aaa; }
-    .auto-slider-row input[type="range"] { flex: 1; accent-color: #10b981; }
+    .status-pill.loading { background: #312e81; color: #c7d2fe; }
+    .status-pill.searching { background: #1e293b; color: #94a3b8; }
+    .status-pill.moving { background: #78350f; color: #fde68a; }
+    .status-pill.locking { background: #065f46; color: #6ee7b7; }
+    .status-pill.cooldown { background: #1e3a8a; color: #93c5fd; }
 
+    .progress-wrap {
+      width: 82px; height: 8px; background: #27272a; border-radius: 999px; overflow: hidden; flex-shrink: 0;
+    }
+    .progress-fill {
+      width: 0%; height: 100%; background: #10b981; transition: width 0.08s linear;
+    }
+
+    /* 카메라 & 오버레이 영역 */
     .camera-container {
       position: relative; flex: 1; background: #000; overflow: hidden;
       display: flex; align-items: center; justify-content: center;
     }
     #video { width: 100%; height: 100%; object-fit: cover; }
-
-    .guide-overlay {
-      position: absolute; inset: 0; pointer-events: none;
-      display: flex; align-items: center; justify-content: center; padding: 5%;
+    #overlayCanvas {
+      position: absolute; inset: 0; width: 100%; height: 100%; z-index: 10;
+      touch-action: none;
     }
-    .guide-frame {
-      width: 100%; height: 100%; border: 2px dashed rgba(255, 255, 255, 0.7);
-      border-radius: 8px; position: relative; transition: border-color 0.2s;
-    }
-    .guide-frame.ready-border { border-color: #10b981; border-style: solid; }
-    .guide-frame.moving-border { border-color: #f59e0b; }
-
-    .center-line {
-      position: absolute; top: 0; bottom: 0; left: 50%; width: 2px;
-      background: rgba(59, 130, 246, 0.85); transform: translateX(-50%);
-    }
-    .guide-overlay.mode-1p .center-line { display: none; }
-
     .flash-effect {
       position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none;
-      transition: opacity 0.15s ease-out;
+      transition: opacity 0.14s ease-out; z-index: 15;
     }
-    .flash-effect.active { opacity: 0.7; }
+    .flash-effect.active { opacity: 0.78; }
 
-    .status-toast {
-      position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%);
-      background: rgba(0, 0, 0, 0.82); color: #fff; padding: 8px 14px;
-      border-radius: 20px; font-size: 12px; white-space: nowrap;
-      opacity: 0; transition: opacity 0.25s; pointer-events: none;
+    /* OpenCV 로딩 오버레이 */
+    .cv-loader {
+      position: absolute; inset: 0; background: rgba(0, 0, 0, 0.82);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 12px; z-index: 30; padding: 20px; text-align: center;
     }
-    .status-toast.show { opacity: 1; }
+    .spinner {
+      width: 36px; height: 36px; border: 4px solid #3f3f46; border-top-color: #3b82f6;
+      border-radius: 50%; animation: spin 0.9s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loader-text { font-size: 13px; color: #e4e4e7; font-weight: 600; }
+    .loader-sub { font-size: 11px; color: #a1a1aa; }
 
+    .toast {
+      position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+      background: rgba(0, 0, 0, 0.88); color: #fff; padding: 8px 14px;
+      border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap;
+      opacity: 0; transition: opacity 0.2s; pointer-events: none; z-index: 25;
+      border: 1px solid rgba(255,255,255,0.16);
+    }
+    .toast.show { opacity: 1; }
+
+    /* 하단 컨트롤 바 */
     .bottom-bar {
       display: flex; justify-content: space-between; align-items: center;
-      padding: 16px 24px 24px; background: rgba(18, 18, 18, 0.95); z-index: 10;
+      padding: 12px 20px 20px; background: rgba(15, 15, 18, 0.96);
+      border-top: 1px solid #27272a; z-index: 20;
     }
     .thumb-box {
-      width: 56px; height: 56px; background: #262626; border: 2px solid #555;
+      width: 56px; height: 56px; background: #18181b; border: 2px solid #52525b;
       border-radius: 10px; position: relative; overflow: hidden;
       display: flex; align-items: center; justify-content: center; cursor: pointer;
     }
     .thumb-box img { width: 100%; height: 100%; object-fit: cover; }
     #pageCount {
       position: absolute; bottom: 0; left: 0; right: 0;
-      background: rgba(0, 0, 0, 0.75); font-size: 11px; text-align: center; padding: 2px 0;
+      background: rgba(0, 0, 0, 0.78); font-size: 11px; font-weight: 700; text-align: center; padding: 2px 0;
     }
-    .shutter-btn {
-      width: 72px; height: 72px; border-radius: 50%; background: #fff;
-      border: 5px solid #888; cursor: pointer; transition: transform 0.1s;
-    }
-    .shutter-btn:active { transform: scale(0.92); background: #ddd; }
-    .right-controls { width: 56px; display: flex; justify-content: flex-end; }
-    .test-tag { font-size: 11px; color: #10b981; font-weight: bold; }
 
+    .shutter-btn {
+      width: 66px; height: 66px; border-radius: 50%; background: #fff;
+      border: 5px solid #71717a; cursor: pointer; transition: transform 0.1s;
+    }
+    .shutter-btn:active { transform: scale(0.92); background: #d4d4d8; }
+
+    .right-tools {
+      width: 60px; display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
+    }
+    .sub-label { font-size: 10px; color: #a1a1aa; }
+    .small-btn {
+      background: #27272a; color: #f4f4f5; border: 1px solid #3f3f46;
+      border-radius: 6px; padding: 5px 8px; font-size: 11px; font-weight: 700; cursor: pointer;
+    }
+
+    /* 미리보기 모달 */
     .modal {
       position: fixed; inset: 0; background: rgba(0, 0, 0, 0.96);
       z-index: 100; display: flex; flex-direction: column;
     }
     .modal-header {
       display: flex; justify-content: space-between; align-items: center;
-      padding: 14px 18px; border-bottom: 1px solid #333; font-weight: bold;
+      padding: 14px 18px; border-bottom: 1px solid #27272a; font-weight: 700; font-size: 15px;
     }
     .close-btn { background: none; border: none; color: #fff; font-size: 22px; cursor: pointer; }
     .modal-body {
       flex: 1; overflow-y: auto; padding: 14px;
       display: flex; flex-direction: column; gap: 14px; align-items: center;
     }
-    .preview-card { width: 100%; max-width: 500px; text-align: center; }
-    .preview-card img { width: 100%; border-radius: 6px; border: 1px solid #444; margin-bottom: 6px; }
-    .preview-card span { font-size: 12px; color: #9ca3af; }
-    .modal-footer { display: flex; gap: 10px; padding: 14px; border-top: 1px solid #333; }
+    .preview-card { width: 100%; max-width: 520px; text-align: center; }
+    .preview-card img { width: 100%; border-radius: 8px; border: 1px solid #3f3f46; margin-bottom: 6px; }
+    .preview-card span { font-size: 12px; color: #a1a1aa; }
+    .modal-footer { display: flex; gap: 10px; padding: 14px; border-top: 1px solid #27272a; }
     .modal-footer button {
-      flex: 1; padding: 13px; border: none; border-radius: 10px; font-size: 14px; font-weight: bold; cursor: pointer;
+      flex: 1; padding: 13px; border: none; border-radius: 10px; font-size: 14px; font-weight: 700; cursor: pointer;
     }
     .danger-btn { background: #dc2626; color: #fff; }
     .primary-btn { background: #2563eb; color: #fff; }
@@ -130,55 +149,52 @@
 </head>
 <body>
   <header class="top-bar">
-    <div class="title-badge">📚 카메라·자동촬영 테스트</div>
+    <div class="brand">📐 스캔 v4</div>
     <div class="top-actions">
-      <button id="autoToggleBtn" class="auto-btn">자동 OFF</button>
-      <button id="modeBtn" class="mode-btn">2P 양면</button>
+      <button id="lockBtn" class="pill-btn">🔓 영역고정</button>
+      <button id="autoScanBtn" class="pill-btn active-green">자동 ON</button>
+      <button id="modeBtn" class="pill-btn active-blue">2P</button>
     </div>
   </header>
 
-  <div id="autoControlBar" class="auto-control-bar" style="display:none;">
-    <div class="auto-status-row">
-      <span id="autoStateBadge" class="auto-badge waiting">책장을 넘기면 자동 촬영됩니다</span>
-      <button id="autoPauseBtn" class="pause-btn">일시정지</button>
-    </div>
-    <div class="auto-slider-row">
-      <label for="sensitivitySlider">민감도</label>
-      <input type="range" id="sensitivitySlider" min="1" max="10" value="5">
-      <span id="sensitivityVal">5</span>
+  <div class="status-bar">
+    <span id="statusPill" class="status-pill loading">OpenCV 엔진 로딩 중...</span>
+    <div class="progress-wrap">
+      <div id="progressFill" class="progress-fill"></div>
     </div>
   </div>
 
   <main class="camera-container">
     <video id="video" autoplay playsinline muted></video>
-    <canvas id="captureCanvas" style="display:none;"></canvas>
+    <canvas id="overlayCanvas"></canvas>
+    <div id="flashEffect" class="flash-effect"></div>
 
-    <div id="guideOverlay" class="guide-overlay mode-2p">
-      <div class="guide-frame">
-        <div class="center-line"></div>
-      </div>
+    <div id="cvLoader" class="cv-loader">
+      <div class="spinner"></div>
+      <div class="loader-text">OpenCV.js 스캔 엔진 불러오는 중...</div>
+      <div class="loader-sub">최초 1회 약 3~5초 소요됩니다</div>
     </div>
 
-    <div id="flashEffect" class="flash-effect"></div>
-    <div id="statusToast" class="status-toast">카메라 준비 중...</div>
+    <div id="toast" class="toast">준비 중...</div>
   </main>
 
   <footer class="bottom-bar">
-    <div id="thumbBox" class="thumb-box" title="찍은 사진 확인">
+    <div id="thumbBox" class="thumb-box" title="촬영 결과 확인">
       <img id="lastThumb" src="" alt="" style="display:none;">
       <span id="pageCount">0쪽</span>
     </div>
 
-    <button id="shutterBtn" class="shutter-btn" aria-label="촬영"></button>
+    <button id="shutterBtn" class="shutter-btn" aria-label="수동 촬영"></button>
 
-    <div class="right-controls">
-      <span class="test-tag">단독모드</span>
+    <div class="right-tools">
+      <span class="sub-label">안전여백</span>
+      <button id="padBtn" class="small-btn">2% ON</button>
     </div>
   </footer>
 
   <div id="previewModal" class="modal" style="display:none;">
     <div class="modal-header">
-      <span>방금 찍은 분할 결과 확인</span>
+      <span>원근 보정 · 분할 결과 확인</span>
       <button id="closeModalBtn" class="close-btn">✕</button>
     </div>
     <div id="previewImages" class="modal-body"></div>
@@ -188,144 +204,110 @@
     </div>
   </div>
 
+  <!-- OpenCV.js 공식 CDN -->
+  <script async src="https://docs.opencv.org/4.8.0/opencv.js" onload="onOpenCvLoaded()" onerror="onOpenCvError()"></script>
+
   <script>
-    class AutoCaptureEngine {
-      constructor(videoEl, onTrigger, onStateChange) {
-        this.video = videoEl;
-        this.onTrigger = onTrigger;
-        this.onStateChange = onStateChange;
-        this.enabled = false;
-        this.paused = false;
-        this.state = "WAITING";
-        this.canvas = document.createElement("canvas");
-        this.canvas.width = 160;
-        this.canvas.height = 120;
-        this.ctx = this.canvas.getContext("2d", { willReadFrequently: true });
-        this.prevFrame = null;
-        this.stableStartTime = 0;
-        this.cooldownUntil = 0;
-        this.timerId = null;
-        this.sensitivity = 5;
-      }
-      setSensitivity(level) { this.sensitivity = Number(level); }
-      getThresholds() {
-        const moveThreshold = 22 - this.sensitivity * 1.4;
-        const stillThreshold = Math.max(2.5, moveThreshold * 0.35);
-        return { moveThreshold, stillThreshold };
-      }
-      start() {
-        if (this.enabled) return;
-        this.enabled = true; this.paused = false; this.state = "WAITING"; this.prevFrame = null;
-        this.notify("WAITING", "책장을 넘기면 자동 촬영됩니다");
-        this.timerId = setInterval(() => this.analyze(), 150);
-      }
-      stop() {
-        this.enabled = false; this.paused = false;
-        if (this.timerId) { clearInterval(this.timerId); this.timerId = null; }
-        this.prevFrame = null; this.state = "WAITING";
-      }
-      togglePause() {
-        this.paused = !this.paused;
-        if (this.paused) {
-          this.notify("PAUSED", "자동 촬영 일시정지됨");
-        } else {
-          this.state = "WAITING"; this.prevFrame = null;
-          this.notify("WAITING", "책장을 넘기면 자동 촬영됩니다");
-        }
-        return this.paused;
-      }
-      notify(code, msg) { if (this.onStateChange) this.onStateChange(code, msg); }
-      captureGray() {
-        if (this.video.readyState < 2 || this.video.videoWidth === 0) return null;
-        this.ctx.drawImage(this.video, 0, 0, 160, 120);
-        const data = this.ctx.getImageData(0, 0, 160, 120).data;
-        const gray = new Uint8Array(160 * 120);
-        for (let i = 0, j = 0; i < data.length; i += 4, j++) {
-          gray[j] = (data[i] * 77 + data[i + 1] * 150 + data[i + 2] * 29) >> 8;
-        }
-        return gray;
-      }
-      motion(a, b) {
-        let s = 0;
-        for (let i = 0; i < a.length; i++) s += Math.abs(a[i] - b[i]);
-        return s / a.length;
-      }
-      sharpness(gray) {
-        let sum = 0, cnt = 0;
-        for (let y = 1; y < 119; y += 2) {
-          for (let x = 1; x < 159; x += 2) {
-            const i = y * 160 + x;
-            sum += Math.abs(4 * gray[i] - gray[i - 1] - gray[i + 1] - gray[i - 160] - gray[i + 160]);
-            cnt++;
-          }
-        }
-        return sum / cnt;
-      }
-      analyze() {
-        if (!this.enabled || this.paused) return;
-        const now = Date.now();
-        if (now < this.cooldownUntil) return;
-        const cur = this.captureGray();
-        if (!cur) return;
-        if (!this.prevFrame) { this.prevFrame = cur; return; }
-        const m = this.motion(this.prevFrame, cur);
-        const { moveThreshold, stillThreshold } = this.getThresholds();
-        this.prevFrame = cur;
-
-        if (this.state === "WAITING") {
-          if (m >= moveThreshold) {
-            this.state = "MOVING";
-            this.notify("MOVING", "책장 넘김 감지됨... 손을 치워주세요");
-          }
-        } else if (this.state === "MOVING") {
-          if (m <= stillThreshold) {
-            this.state = "STABILIZING";
-            this.stableStartTime = now;
-            this.notify("STABILIZING", "초점 안정화 중... 곧 촬영됩니다");
-          }
-        } else if (this.state === "STABILIZING") {
-          if (m > stillThreshold * 1.5) {
-            this.state = "MOVING";
-            this.notify("MOVING", "움직임 감지됨... 잠시 멈춰주세요");
-          } else if (now - this.stableStartTime >= 600) {
-            if (this.sharpness(cur) >= 3.0) {
-              this.state = "WAITING";
-              this.cooldownUntil = now + 1500;
-              this.notify("WAITING", "📸 자동 촬영 완료! 다음 장을 넘겨주세요");
-              if (this.onTrigger) this.onTrigger();
-            }
-          }
-        }
-      }
-    }
-
     const video = document.getElementById("video");
-    const captureCanvas = document.getElementById("captureCanvas");
+    const overlayCanvas = document.getElementById("overlayCanvas");
+    const overlayCtx = overlayCanvas.getContext("2d");
+    const cvLoader = document.getElementById("cvLoader");
+
+    const lockBtn = document.getElementById("lockBtn");
+    const autoScanBtn = document.getElementById("autoScanBtn");
     const modeBtn = document.getElementById("modeBtn");
-    const autoToggleBtn = document.getElementById("autoToggleBtn");
-    const autoControlBar = document.getElementById("autoControlBar");
-    const autoStateBadge = document.getElementById("autoStateBadge");
-    const autoPauseBtn = document.getElementById("autoPauseBtn");
-    const sensitivitySlider = document.getElementById("sensitivitySlider");
-    const sensitivityVal = document.getElementById("sensitivityVal");
-    const guideOverlay = document.getElementById("guideOverlay");
-    const guideFrame = document.querySelector(".guide-frame");
-    const shutterBtn = document.getElementById("shutterBtn");
+    const padBtn = document.getElementById("padBtn");
+    const statusPill = document.getElementById("statusPill");
+    const progressFill = document.getElementById("progressFill");
     const flashEffect = document.getElementById("flashEffect");
-    const statusToast = document.getElementById("statusToast");
+    const toast = document.getElementById("toast");
     const thumbBox = document.getElementById("thumbBox");
     const lastThumb = document.getElementById("lastThumb");
     const pageCount = document.getElementById("pageCount");
+    const shutterBtn = document.getElementById("shutterBtn");
+
     const previewModal = document.getElementById("previewModal");
     const previewImages = document.getElementById("previewImages");
     const closeModalBtn = document.getElementById("closeModalBtn");
     const okModalBtn = document.getElementById("okModalBtn");
     const deleteLastBtn = document.getElementById("deleteLastBtn");
 
-    let scanMode = "2p";
+    // 분석용 경량 캔버스 (OpenCV 처리 속도 최적화)
+    const workCanvas = document.createElement("canvas");
+    const workCtx = workCanvas.getContext("2d", { willReadFrequently: true });
+    const WORK_W = 240;
+    let WORK_H = 320;
+
+    // 내용 변화/유사도 비교용 초경량 캔버스
+    const sigCanvas = document.createElement("canvas");
+    sigCanvas.width = 64;
+    sigCanvas.height = 64;
+    const sigCtx = sigCanvas.getContext("2d", { willReadFrequently: true });
+
+    // 앱 상태
+    let cvReady = false;
+    let cameraReady = false;
+    let autoScanEnabled = true;
+    let isLocked = false;         // 영역 고정(Lock) 모드
+    let scanMode = "2p";          // "2p" | "1p"
+    let safetyPadding = 0.02;     // 2% 안전 여백
+
+    // 네모 좌표 (0~1 정규화: [tl, tr, br, bl])
+    let currentQuad = null;
+    let lockedQuad = [
+      { x: 0.08, y: 0.12 },
+      { x: 0.92, y: 0.12 },
+      { x: 0.92, y: 0.88 },
+      { x: 0.08, y: 0.88 }
+    ];
+    let draggingCorner = -1;      // 드래그 중인 꼭짓점 인덱스 (0~3)
+
+    // 3단계 책장 넘김 & 안정화 상태 머신
+    let prevSig = null;           // 직전 프레임 네모 안쪽 시그니처 (움직임 측정용)
+    let lastCapturedSig = null;   // 직전 촬영된 페이지 시그니처 (중복 촬영 방지용)
+    let stableStartTime = 0;
+    let hasMovedSinceCapture = true; // 첫 장은 바로 촬영 허용
+    let missedFrames = 0;
+    let cooldownUntil = 0;
+
     let capturedPages = [];
     let lastBatchCount = 0;
     let audioCtx = null;
+    let wakeLock = null;
+
+    // OpenCV.js 로드 콜백
+    function onOpenCvLoaded() {
+      if (typeof cv !== "undefined") {
+        if (cv.getBuildInformation) {
+          finishCvInit();
+        } else {
+          cv["onRuntimeInitialized"] = finishCvInit;
+        }
+      }
+    }
+
+    function finishCvInit() {
+      cvReady = true;
+      cvLoader.style.display = "none";
+      setStatus("searching", "책을 비추거나 [영역고정]을 누르세요");
+      showToast("✅ OpenCV 엔진 준비 완료!");
+    }
+
+    function onOpenCvError() {
+      cvLoader.innerHTML = '<div class="loader-text">❌ OpenCV 로딩 실패</div><div class="loader-sub">인터넷 연결을 확인하고 새로고침 해주세요</div>';
+    }
+
+    // 화면 꺼짐 방지 (Screen Wake Lock API)
+    async function requestWakeLock() {
+      try {
+        if ("wakeLock" in navigator) {
+          wakeLock = await navigator.wakeLock.request("screen");
+        }
+      } catch (e) {}
+    }
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") requestWakeLock();
+    });
 
     function playShutterSound() {
       try {
@@ -333,9 +315,9 @@
         const osc = audioCtx.createOscillator();
         const gain = audioCtx.createGain();
         osc.type = "sine";
-        osc.frequency.setValueAtTime(880, audioCtx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(440, audioCtx.currentTime + 0.08);
-        gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+        osc.frequency.setValueAtTime(920, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(460, audioCtx.currentTime + 0.08);
+        gain.gain.setValueAtTime(0.16, audioCtx.currentTime);
         gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.08);
         osc.connect(gain); gain.connect(audioCtx.destination);
         osc.start(); osc.stop(audioCtx.currentTime + 0.09);
@@ -343,57 +325,290 @@
     }
 
     function showToast(msg, ms = 2200) {
-      statusToast.textContent = msg;
-      statusToast.classList.add("show");
+      toast.textContent = msg;
+      toast.classList.add("show");
       clearTimeout(window.toastTimer);
-      window.toastTimer = setTimeout(() => statusToast.classList.remove("show"), ms);
+      window.toastTimer = setTimeout(() => toast.classList.remove("show"), ms);
     }
 
+    function setStatus(type, text) {
+      statusPill.className = "status-pill " + type;
+      statusPill.textContent = text;
+    }
+
+    // 1. 카메라 초기화
     async function initCamera() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: "environment" }, width: { ideal: 2560 }, height: { ideal: 1920 } },
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 2560 },
+            height: { ideal: 1920 }
+          },
           audio: false
         });
         video.srcObject = stream;
-        showToast("✅ 카메라 준비 완료!");
+        video.onloadedmetadata = () => {
+          const aspect = video.videoHeight / video.videoWidth;
+          WORK_H = Math.round(WORK_W * aspect);
+          workCanvas.width = WORK_W;
+          workCanvas.height = WORK_H;
+          cameraReady = true;
+          requestWakeLock();
+          requestAnimationFrame(mainLoop);
+        };
       } catch (err) {
         alert("카메라 권한을 허용해주세요: " + err.message);
       }
     }
 
-    function captureLocal() {
-      if (!video.videoWidth) return;
+    // 2. 정확한 화면 <-> 비디오 좌표 변환 (object-fit: cover 대응)
+    function getCoverMetrics() {
+      const cw = overlayCanvas.width || 1;
+      const ch = overlayCanvas.height || 1;
+      const vw = video.videoWidth || 1;
+      const vh = video.videoHeight || 1;
+      const scale = Math.max(cw / vw, ch / vh);
+      const dispW = vw * scale;
+      const dispH = vh * scale;
+      const offsetX = (cw - dispW) / 2;
+      const offsetY = (ch - dispH) / 2;
+      return { cw, ch, vw, vh, dispW, dispH, offsetX, offsetY };
+    }
+
+    function normToScreen(pt) {
+      const m = getCoverMetrics();
+      return { x: m.offsetX + pt.x * m.dispW, y: m.offsetY + pt.y * m.dispH };
+    }
+
+    function screenToNorm(sx, sy) {
+      const m = getCoverMetrics();
+      return {
+        x: Math.max(0.01, Math.min(0.99, (sx - m.offsetX) / m.dispW)),
+        y: Math.max(0.01, Math.min(0.99, (sy - m.offsetY) / m.dispH))
+      };
+    }
+
+    // 3. 4개 꼭짓점 정렬 [tl, tr, br, bl]
+    function orderQuad(pts) {
+      let tl = pts[0], tr = pts[0], br = pts[0], bl = pts[0];
+      let minS = Infinity, maxS = -Infinity, minD = Infinity, maxD = -Infinity;
+      for (const p of pts) {
+        const s = p.x + p.y;
+        const d = p.x - p.y;
+        if (s < minS) { minS = s; tl = p; }
+        if (s > maxS) { maxS = s; br = p; }
+        if (d > maxD) { maxD = d; tr = p; }
+        if (d < minD) { minD = d; bl = p; }
+      }
+      return [tl, tr, br, bl];
+    }
+
+    // 4. OpenCV.js 기반 네모 탐지 (메모리 누수 0% 보장 try-finally)
+    function detectQuadWithOpenCV() {
+      if (!cvReady || !cameraReady) return null;
+
+      workCtx.drawImage(video, 0, 0, WORK_W, WORK_H);
+      let src = null, gray = null, blurred = null, edges = null, dilated = null;
+      let contours = null, hierarchy = null, kernel = null;
+
+      try {
+        src = cv.imread(workCanvas);
+        gray = new cv.Mat();
+        blurred = new cv.Mat();
+        edges = new cv.Mat();
+        dilated = new cv.Mat();
+        contours = new cv.MatVector();
+        hierarchy = new cv.Mat();
+
+        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+        cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
+
+        // Canny 에지 + 형태학 닫힘으로 책 테두리 연결 (밝은 책상 대응)
+        cv.Canny(blurred, edges, 40, 120);
+        kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(5, 5));
+        cv.dilate(edges, dilated, kernel, new cv.Point(-1, -1), 2);
+        cv.findContours(dilated, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+        const totalArea = WORK_W * WORK_H;
+        let bestQuad = null;
+        let maxArea = 0;
+
+        for (let i = 0; i < contours.size(); i++) {
+          const cnt = contours.get(i);
+          const area = cv.contourArea(cnt);
+          if (area < totalArea * 0.18 || area > totalArea * 0.95) {
+            cnt.delete();
+            continue;
+          }
+
+          const peri = cv.arcLength(cnt, true);
+          const approx = new cv.Mat();
+          cv.approxPolyDP(cnt, approx, 0.03 * peri, true);
+
+          if (approx.rows === 4 && cv.isContourConvex(approx) && area > maxArea) {
+            maxArea = area;
+            const pts = [];
+            for (let r = 0; r < 4; r++) {
+              pts.push({
+                x: approx.intPtr(r, 0)[0] / WORK_W,
+                y: approx.intPtr(r, 0)[1] / WORK_H
+              });
+            }
+            bestQuad = orderQuad(pts);
+          }
+          approx.delete();
+          cnt.delete();
+        }
+        return bestQuad;
+      } catch (e) {
+        return null;
+      } finally {
+        if (src) src.delete();
+        if (gray) gray.delete();
+        if (blurred) blurred.delete();
+        if (edges) edges.delete();
+        if (dilated) dilated.delete();
+        if (contours) contours.delete();
+        if (hierarchy) hierarchy.delete();
+        if (kernel) kernel.delete();
+      }
+    }
+
+    // 5. 네모 안쪽 영역의 시그니처(64x64 흑백) 및 초점 선명도 추출
+    function extractInsideSignature(quad) {
+      const vw = video.videoWidth;
+      const vh = video.videoHeight;
+      const xs = quad.map(p => p.x * vw);
+      const ys = quad.map(p => p.y * vh);
+      const sx = Math.max(0, Math.floor(Math.min(...xs)));
+      const sy = Math.max(0, Math.floor(Math.min(...ys)));
+      const sw = Math.max(32, Math.floor(Math.max(...xs) - sx));
+      const sh = Math.max(32, Math.floor(Math.max(...ys) - sy));
+
+      sigCtx.drawImage(video, sx, sy, sw, sh, 0, 0, 64, 64);
+      const data = sigCtx.getImageData(0, 0, 64, 64).data;
+      const gray = new Uint8Array(64 * 64);
+      for (let i = 0, j = 0; i < data.length; i += 4, j++) {
+        gray[j] = (data[i] * 77 + data[i + 1] * 150 + data[i + 2] * 29) >> 8;
+      }
+
+      // 초점 선명도 (라플라시안)
+      let sharp = 0, cnt = 0;
+      for (let y = 1; y < 63; y += 2) {
+        for (let x = 1; x < 63; x += 2) {
+          const i = y * 64 + x;
+          sharp += Math.abs(4 * gray[i] - gray[i - 1] - gray[i + 1] - gray[i - 64] - gray[i + 64]);
+          cnt++;
+        }
+      }
+      return { gray, sharpness: sharp / cnt };
+    }
+
+    function diffSignature(a, b) {
+      if (!a || !b) return 999;
+      let sum = 0;
+      for (let i = 0; i < a.length; i++) sum += Math.abs(a[i] - b[i]);
+      return sum / a.length;
+    }
+
+    // 6. 안전 여백(Padding) 적용 후 OpenCV.js 실제 원근 펴기(Warp) + 2P 분할 촬영
+    function expandQuad(quad, pad) {
+      if (pad <= 0) return quad;
+      const cx = (quad[0].x + quad[1].x + quad[2].x + quad[3].x) / 4;
+      const cy = (quad[0].y + quad[1].y + quad[2].y + quad[3].y) / 4;
+      return quad.map(p => ({
+        x: Math.max(0, Math.min(1, cx + (p.x - cx) * (1 + pad * 2))),
+        y: Math.max(0, Math.min(1, cy + (p.y - cy) * (1 + pad * 2)))
+      }));
+    }
+
+    function captureAndWarp(quad) {
+      if (!cameraReady || !cvReady) return;
       playShutterSound();
       flashEffect.classList.add("active");
       setTimeout(() => flashEffect.classList.remove("active"), 150);
 
       const vw = video.videoWidth;
       const vh = video.videoHeight;
+      const rawCanvas = document.createElement("canvas");
+      rawCanvas.width = vw;
+      rawCanvas.height = vh;
+      rawCanvas.getContext("2d").drawImage(video, 0, 0, vw, vh);
 
+      const targetQuad = quad ? expandQuad(quad, safetyPadding) : [
+        { x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }
+      ];
+
+      let src = null, dst = null, srcTri = null, dstTri = null, M = null;
+      const warpedCanvas = document.createElement("canvas");
+
+      try {
+        const pts = targetQuad.map(p => ({ x: p.x * vw, y: p.y * vh }));
+        const widthA = Math.hypot(pts[2].x - pts[3].x, pts[2].y - pts[3].y);
+        const widthB = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+        const outW = Math.max(200, Math.round(Math.max(widthA, widthB)));
+
+        const heightA = Math.hypot(pts[1].x - pts[2].x, pts[1].y - pts[2].y);
+        const heightB = Math.hypot(pts[0].x - pts[3].x, pts[0].y - pts[3].y);
+        const outH = Math.max(200, Math.round(Math.max(heightA, heightB)));
+
+        src = cv.imread(rawCanvas);
+        dst = new cv.Mat();
+        srcTri = cv.matFromArray(4, 1, cv.CV_32FC2, [
+          pts[0].x, pts[0].y,
+          pts[1].x, pts[1].y,
+          pts[2].x, pts[2].y,
+          pts[3].x, pts[3].y
+        ]);
+        dstTri = cv.matFromArray(4, 1, cv.CV_32FC2, [
+          0, 0,
+          outW - 1, 0,
+          outW - 1, outH - 1,
+          0, outH - 1
+        ]);
+
+        M = cv.getPerspectiveTransform(srcTri, dstTri);
+        cv.warpPerspective(src, dst, M, new cv.Size(outW, outH), cv.INTER_CUBIC);
+
+        warpedCanvas.width = outW;
+        warpedCanvas.height = outH;
+        cv.imshow(warpedCanvas, dst);
+      } catch (e) {
+        warpedCanvas.width = vw;
+        warpedCanvas.height = vh;
+        warpedCanvas.getContext("2d").drawImage(rawCanvas, 0, 0);
+      } finally {
+        if (src) src.delete();
+        if (dst) dst.delete();
+        if (srcTri) srcTri.delete();
+        if (dstTri) dstTri.delete();
+        if (M) M.delete();
+      }
+
+      // 2P 분할 또는 1P 저장
+      const fw = warpedCanvas.width;
+      const fh = warpedCanvas.height;
       if (scanMode === "2p") {
-        // 좌/우 반으로 분할하여 미리보기 저장
-        const half = Math.floor(vw / 2);
-        const leftCanvas = document.createElement("canvas");
-        leftCanvas.width = half; leftCanvas.height = vh;
-        leftCanvas.getContext("2d").drawImage(video, 0, 0, half, vh, 0, 0, half, vh);
+        const half = Math.floor(fw / 2);
+        const leftC = document.createElement("canvas");
+        leftC.width = half; leftC.height = fh;
+        leftC.getContext("2d").drawImage(warpedCanvas, 0, 0, half, fh, 0, 0, half, fh);
 
-        const rightCanvas = document.createElement("canvas");
-        rightCanvas.width = vw - half; rightCanvas.height = vh;
-        rightCanvas.getContext("2d").drawImage(video, half, 0, vw - half, vh, 0, 0, vw - half, vh);
+        const rightC = document.createElement("canvas");
+        rightC.width = fw - half; rightC.height = fh;
+        rightC.getContext("2d").drawImage(warpedCanvas, half, 0, fw - half, fh, 0, 0, fw - half, fh);
 
-        capturedPages.push(leftCanvas.toDataURL("image/jpeg", 0.85));
-        capturedPages.push(rightCanvas.toDataURL("image/jpeg", 0.85));
+        capturedPages.push(leftC.toDataURL("image/jpeg", 0.88));
+        capturedPages.push(rightC.toDataURL("image/jpeg", 0.88));
         lastBatchCount = 2;
       } else {
-        captureCanvas.width = vw; captureCanvas.height = vh;
-        captureCanvas.getContext("2d").drawImage(video, 0, 0);
-        capturedPages.push(captureCanvas.toDataURL("image/jpeg", 0.85));
+        capturedPages.push(warpedCanvas.toDataURL("image/jpeg", 0.88));
         lastBatchCount = 1;
       }
 
       updateThumb();
-      showToast(`📸 촬영 완료! (누적 ${capturedPages.length}쪽)`);
+      showToast(`📸 원근 보정 완료! (누적 ${capturedPages.length}쪽)`);
     }
 
     function updateThumb() {
@@ -406,59 +621,306 @@
       }
     }
 
-    const autoEngine = new AutoCaptureEngine(
-      video,
-      () => { if (previewModal.style.display === "none") captureLocal(); },
-      (code, msg) => {
-        autoStateBadge.textContent = msg;
-        autoStateBadge.className = "auto-badge " + code.toLowerCase();
-        guideFrame.classList.remove("ready-border", "moving-border");
-        if (code === "MOVING") guideFrame.classList.add("moving-border");
-        else if (code === "STABILIZING") guideFrame.classList.add("ready-border");
+    // 7. 오버레이 그리기 (드래그 핸들 포함)
+    function drawOverlay(quad, state) {
+      const rect = overlayCanvas.getBoundingClientRect();
+      if (overlayCanvas.width !== rect.width || overlayCanvas.height !== rect.height) {
+        overlayCanvas.width = rect.width;
+        overlayCanvas.height = rect.height;
       }
-    );
+      overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+      if (!quad) return;
 
-    autoToggleBtn.addEventListener("click", () => {
-      if (autoEngine.enabled) {
-        autoEngine.stop();
-        autoToggleBtn.textContent = "자동 OFF";
-        autoToggleBtn.classList.remove("active");
-        autoControlBar.style.display = "none";
-        guideFrame.classList.remove("ready-border", "moving-border");
+      const pts = quad.map(p => normToScreen(p));
+
+      let strokeColor = "#f59e0b";
+      let fillColor = "rgba(245, 158, 11, 0.12)";
+      if (state === "locking") {
+        strokeColor = "#10b981";
+        fillColor = "rgba(16, 185, 129, 0.16)";
+      } else if (state === "cooldown") {
+        strokeColor = "#3b82f6";
+        fillColor = "rgba(59, 130, 246, 0.14)";
+      } else if (isLocked) {
+        strokeColor = "#fbbf24";
+        fillColor = "rgba(251, 191, 36, 0.10)";
+      }
+
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < 4; i++) overlayCtx.lineTo(pts[i].x, pts[i].y);
+      overlayCtx.closePath();
+      overlayCtx.fillStyle = fillColor;
+      overlayCtx.fill();
+      overlayCtx.lineWidth = 3;
+      overlayCtx.strokeStyle = strokeColor;
+      overlayCtx.stroke();
+
+      // 2P 중앙선
+      if (scanMode === "2p") {
+        const topM = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+        const botM = { x: (pts[3].x + pts[2].x) / 2, y: (pts[3].y + pts[2].y) / 2 };
+        overlayCtx.beginPath();
+        overlayCtx.setLineDash([8, 6]);
+        overlayCtx.moveTo(topM.x, topM.y);
+        overlayCtx.lineTo(botM.x, botM.y);
+        overlayCtx.lineWidth = 2.5;
+        overlayCtx.strokeStyle = "rgba(59, 130, 246, 0.95)";
+        overlayCtx.stroke();
+        overlayCtx.setLineDash([]);
+      }
+
+      // 꼭짓점 핸들 (영역 고정 시 크게 표시해 손가락으로 끌기 쉽게)
+      const r = isLocked ? 14 : 6;
+      for (let i = 0; i < 4; i++) {
+        overlayCtx.beginPath();
+        overlayCtx.arc(pts[i].x, pts[i].y, r, 0, Math.PI * 2);
+        overlayCtx.fillStyle = isLocked ? "rgba(251, 191, 36, 0.85)" : strokeColor;
+        overlayCtx.fill();
+        if (isLocked) {
+          overlayCtx.lineWidth = 2.5;
+          overlayCtx.strokeStyle = "#fff";
+          overlayCtx.stroke();
+        }
+      }
+    }
+
+    // 8. 메인 루프 (OpenCV 탐지 + 3단계 책장 넘김/유사도 체크)
+    let lastTick = 0;
+    function mainLoop(now) {
+      requestAnimationFrame(mainLoop);
+      if (now - lastTick < 90) return;
+      lastTick = now;
+
+      if (!cvReady || !cameraReady || previewModal.style.display !== "none") return;
+
+      // 영역 결정: 고정 모드면 lockedQuad, 자동 모드면 OpenCV 탐지
+      let activeQuad = null;
+      if (isLocked) {
+        activeQuad = lockedQuad;
       } else {
-        autoEngine.start();
-        autoToggleBtn.textContent = "자동 ON";
-        autoToggleBtn.classList.add("active");
-        autoControlBar.style.display = "flex";
-        autoPauseBtn.textContent = "일시정지";
-        showToast("자동 촬영 ON! 책장을 넘겨보세요");
+        const detected = detectQuadWithOpenCV();
+        if (detected) {
+          missedFrames = 0;
+          if (!currentQuad) {
+            currentQuad = detected;
+          } else {
+            const alpha = 0.35;
+            currentQuad = currentQuad.map((p, i) => ({
+              x: p.x * (1 - alpha) + detected[i].x * alpha,
+              y: p.y * (1 - alpha) + detected[i].y * alpha
+            }));
+          }
+        } else {
+          missedFrames++;
+          if (missedFrames > 4) currentQuad = null;
+        }
+        activeQuad = currentQuad;
       }
+
+      if (!activeQuad) {
+        progressFill.style.width = "0%";
+        drawOverlay(null, "searching");
+        setStatus("searching", "책을 비추거나 상단 [영역고정]을 누르세요");
+        prevSig = null;
+        stableStartTime = 0;
+        return;
+      }
+
+      const ts = Date.now();
+      if (draggingCorner !== -1) {
+        drawOverlay(activeQuad, "moving");
+        setStatus("moving", "모서리를 책 끝에 맞춰주세요");
+        progressFill.style.width = "0%";
+        return;
+      }
+
+      if (ts < cooldownUntil) {
+        drawOverlay(activeQuad, "cooldown");
+        setStatus("cooldown", "촬영 완료! 다음 책장을 넘겨주세요");
+        progressFill.style.width = "100%";
+        return;
+      }
+
+      if (!autoScanEnabled) {
+        drawOverlay(activeQuad, "detected");
+        progressFill.style.width = "0%";
+        setStatus("searching", isLocked ? "영역 고정됨 (수동 셔터)" : "네모 인식됨 (수동 셔터)");
+        return;
+      }
+
+      // 네모 안쪽 내용 변화 & 선명도 측정
+      const { gray, sharpness } = extractInsideSignature(activeQuad);
+      const motion = diffSignature(prevSig, gray);
+      prevSig = gray;
+
+      // 1단계: 움직임 감지 (책장 넘기는 중)
+      if (motion > 5.5) {
+        hasMovedSinceCapture = true;
+        stableStartTime = 0;
+        progressFill.style.width = "0%";
+        drawOverlay(activeQuad, "moving");
+        setStatus("moving", "책장 넘김 감지됨... 손을 치워주세요");
+        return;
+      }
+
+      // 직전 촬영 후 아직 움직임이 없었으면 대기
+      if (!hasMovedSinceCapture) {
+        progressFill.style.width = "0%";
+        drawOverlay(activeQuad, "cooldown");
+        setStatus("cooldown", "책장을 넘기면 자동 촬영됩니다");
+        return;
+      }
+
+      // 2단계: 정지 안정화 (0.75초)
+      if (stableStartTime === 0) {
+        stableStartTime = ts;
+      }
+      const elapsed = ts - stableStartTime;
+      const progress = Math.min(1, elapsed / 750);
+      progressFill.style.width = `${Math.round(progress * 100)}%`;
+
+      if (progress < 1) {
+        drawOverlay(activeQuad, "locking");
+        setStatus("locking", `초점·정지 안정화 중... ${Math.round(progress * 100)}%`);
+        return;
+      }
+
+      // 3단계: 직전 페이지와 실제 내용 비교 (손만 들어왔다 나간 중복 촬영 차단)
+      if (lastCapturedSig) {
+        const contentDiff = diffSignature(lastCapturedSig, gray);
+        if (contentDiff < 9.0) {
+          // 같은 페이지임! 촬영하지 않고 다시 넘김 대기
+          hasMovedSinceCapture = false;
+          stableStartTime = 0;
+          progressFill.style.width = "0%";
+          drawOverlay(activeQuad, "cooldown");
+          setStatus("cooldown", "같은 페이지 감지됨 (책장을 넘겨주세요)");
+          return;
+        }
+      }
+
+      // 초점 선명도 확인
+      if (sharpness < 3.0) {
+        drawOverlay(activeQuad, "moving");
+        setStatus("moving", "초점 맞추는 중...");
+        return;
+      }
+
+      // 모든 검증 통과 -> 자동 촬영 & 원근 보정 실행!
+      captureAndWarp(activeQuad);
+      lastCapturedSig = gray;
+      hasMovedSinceCapture = false;
+      stableStartTime = 0;
+      cooldownUntil = ts + 1400;
+      drawOverlay(activeQuad, "cooldown");
+    }
+
+    // 9. 4개 모서리 터치 드래그 (영역 고정 모드)
+    function getPointerPos(e) {
+      const rect = overlayCanvas.getBoundingClientRect();
+      const touch = e.touches ? e.touches[0] : e;
+      return { x: touch.clientX - rect.left, y: touch.clientY - rect.top };
+    }
+
+    function onPointerDown(e) {
+      if (!isLocked) return;
+      const pos = getPointerPos(e);
+      const pts = lockedQuad.map(p => normToScreen(p));
+      let bestIdx = -1, minDist = 42; // 손가락 터치 여유 반경 42px
+      for (let i = 0; i < 4; i++) {
+        const d = Math.hypot(pts[i].x - pos.x, pts[i].y - pos.y);
+        if (d < minDist) { minDist = d; bestIdx = i; }
+      }
+      if (bestIdx !== -1) {
+        draggingCorner = bestIdx;
+        e.preventDefault();
+      }
+    }
+
+    function onPointerMove(e) {
+      if (draggingCorner === -1 || !isLocked) return;
+      const pos = getPointerPos(e);
+      lockedQuad[draggingCorner] = screenToNorm(pos.x, pos.y);
+      drawOverlay(lockedQuad, "moving");
+      e.preventDefault();
+    }
+
+    function onPointerUp() {
+      if (draggingCorner !== -1) {
+        draggingCorner = -1;
+        hasMovedSinceCapture = true;
+        stableStartTime = 0;
+      }
+    }
+
+    overlayCanvas.addEventListener("touchstart", onPointerDown, { passive: false });
+    overlayCanvas.addEventListener("touchmove", onPointerMove, { passive: false });
+    overlayCanvas.addEventListener("touchend", onPointerUp);
+    overlayCanvas.addEventListener("mousedown", onPointerDown);
+    window.addEventListener("mousemove", onPointerMove);
+    window.addEventListener("mouseup", onPointerUp);
+
+    // 버튼 이벤트
+    lockBtn.addEventListener("click", () => {
+      isLocked = !isLocked;
+      if (isLocked) {
+        // 현재 자동 인식된 네모가 있으면 그 위치로 바로 고정
+        if (currentQuad) {
+          lockedQuad = currentQuad.map(p => ({ ...p }));
+        }
+        lockBtn.textContent = "🔒 고정됨";
+        lockBtn.classList.add("active-amber");
+        showToast("노란 꼭짓점을 손가락으로 끌어 책에 맞추세요");
+      } else {
+        lockBtn.textContent = "🔓 영역고정";
+        lockBtn.classList.remove("active-amber");
+        showToast("자동 네모 인식 모드로 복귀");
+      }
+      stableStartTime = 0;
     });
 
-    autoPauseBtn.addEventListener("click", () => {
-      const p = autoEngine.togglePause();
-      autoPauseBtn.textContent = p ? "다시 시작" : "일시정지";
-    });
-
-    sensitivitySlider.addEventListener("input", () => {
-      sensitivityVal.textContent = sensitivitySlider.value;
-      autoEngine.setSensitivity(sensitivitySlider.value);
+    autoScanBtn.addEventListener("click", () => {
+      autoScanEnabled = !autoScanEnabled;
+      autoScanBtn.textContent = autoScanEnabled ? "자동 ON" : "자동 OFF";
+      autoScanBtn.classList.toggle("active-green", autoScanEnabled);
+      stableStartTime = 0;
+      progressFill.style.width = "0%";
+      showToast(autoScanEnabled ? "자동 촬영 ON" : "수동 촬영 모드");
     });
 
     modeBtn.addEventListener("click", () => {
-      if (scanMode === "2p") {
-        scanMode = "1p"; modeBtn.textContent = "1P 단면";
-        guideOverlay.classList.replace("mode-2p", "mode-1p");
-      } else {
-        scanMode = "2p"; modeBtn.textContent = "2P 양면";
-        guideOverlay.classList.replace("mode-1p", "mode-2p");
-      }
+      scanMode = scanMode === "2p" ? "1p" : "2p";
+      modeBtn.textContent = scanMode === "2p" ? "2P" : "1P";
+      showToast(scanMode === "2p" ? "2P 양면 분할 모드" : "1P 단면 모드");
     });
 
-    shutterBtn.addEventListener("click", captureLocal);
+    padBtn.addEventListener("click", () => {
+      if (safetyPadding > 0) {
+        safetyPadding = 0;
+        padBtn.textContent = "0% OFF";
+      } else {
+        safetyPadding = 0.02;
+        padBtn.textContent = "2% ON";
+      }
+      showToast(`안전 여백: ${Math.round(safetyPadding * 100)}%`);
+    });
+
+    shutterBtn.addEventListener("click", () => {
+      const q = isLocked ? lockedQuad : currentQuad;
+      captureAndWarp(q);
+      if (q) {
+        lastCapturedSig = extractInsideSignature(q).gray;
+        hasMovedSinceCapture = false;
+      }
+      cooldownUntil = Date.now() + 1000;
+    });
 
     thumbBox.addEventListener("click", () => {
-      if (capturedPages.length === 0) { showToast("촬영한 사진이 없습니다."); return; }
+      if (capturedPages.length === 0) {
+        showToast("촬영한 사진이 없습니다.");
+        return;
+      }
       previewImages.innerHTML = "";
       const recent = capturedPages.slice(-lastBatchCount);
       recent.forEach((src, idx) => {
@@ -478,6 +940,8 @@
       if (lastBatchCount > 0) {
         capturedPages.splice(-lastBatchCount);
         lastBatchCount = 0;
+        lastCapturedSig = null;
+        hasMovedSinceCapture = true;
         updateThumb();
         closeModal();
         showToast("🗑 방금 찍은 사진을 삭제했습니다.");
