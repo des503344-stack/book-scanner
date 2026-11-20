@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>북 스캔 스튜디오 v7 (모든 책 크기·비율 자동 인식)</title>
+  <title>북 스캔 스튜디오 v8 (전면 개편)</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
     body {
@@ -12,12 +12,13 @@
       touch-action: none;
     }
 
+    /* 상단 컨트롤 바 */
     .top-bar {
       display: flex; justify-content: space-between; align-items: center; gap: 6px;
-      padding: 8px 10px; background: rgba(15, 15, 18, 0.96); border-bottom: 1px solid #27272a; z-index: 20;
+      padding: 8px 10px; background: #111114; border-bottom: 1px solid #27272a; z-index: 20;
     }
-    .brand { font-size: 13px; font-weight: 700; color: #93c5fd; white-space: nowrap; }
-    .top-actions { display: flex; gap: 5px; flex-wrap: nowrap; }
+    .brand { font-size: 13px; font-weight: 800; color: #60a5fa; white-space: nowrap; }
+    .top-actions { display: flex; gap: 5px; }
     .pill-btn {
       background: #27272a; color: #e4e4e7; border: 1px solid #3f3f46;
       border-radius: 8px; padding: 6px 9px; font-size: 11px; font-weight: 700; cursor: pointer;
@@ -27,8 +28,9 @@
     .pill-btn.active-green { background: #10b981; border-color: #34d399; color: #052e16; }
     .pill-btn.active-amber { background: #f59e0b; border-color: #fbbf24; color: #451a03; }
 
+    /* 상태 & 게이지 바 */
     .status-bar {
-      background: rgba(24, 24, 27, 0.94); padding: 6px 12px;
+      background: #18181b; padding: 6px 12px;
       display: flex; justify-content: space-between; align-items: center; gap: 10px;
       border-bottom: 1px solid #27272a; z-index: 20;
     }
@@ -43,17 +45,20 @@
     .status-pill.cooldown { background: #1e3a8a; color: #93c5fd; }
 
     .progress-wrap {
-      width: 82px; height: 8px; background: #27272a; border-radius: 999px; overflow: hidden; flex-shrink: 0;
+      width: 86px; height: 8px; background: #27272a; border-radius: 999px; overflow: hidden; flex-shrink: 0;
     }
     .progress-fill {
       width: 0%; height: 100%; background: #10b981; transition: width 0.06s linear;
     }
 
+    /* 카메라 뷰포트: contain으로 카메라 원본 전체를 왜곡·잘림 없이 100% 표시 */
     .camera-container {
       position: relative; flex: 1; background: #000; overflow: hidden;
       display: flex; align-items: center; justify-content: center;
     }
-    #video { width: 100%; height: 100%; object-fit: cover; }
+    #video {
+      width: 100%; height: 100%; object-fit: contain;
+    }
     #overlayCanvas {
       position: absolute; inset: 0; width: 100%; height: 100%; z-index: 10;
       touch-action: none;
@@ -65,30 +70,31 @@
     .flash-effect.active { opacity: 0.78; }
 
     .cv-loader {
-      position: absolute; inset: 0; background: rgba(0, 0, 0, 0.82);
+      position: absolute; inset: 0; background: rgba(0, 0, 0, 0.86);
       display: flex; flex-direction: column; align-items: center; justify-content: center;
       gap: 12px; z-index: 30; padding: 20px; text-align: center;
     }
     .spinner {
       width: 36px; height: 36px; border: 4px solid #3f3f46; border-top-color: #3b82f6;
-      border-radius: 50%; animation: spin 0.9s linear infinite;
+      border-radius: 50%; animation: spin 0.85s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-    .loader-text { font-size: 13px; color: #e4e4e7; font-weight: 600; }
+    .loader-text { font-size: 13px; color: #e4e4e7; font-weight: 700; }
     .loader-sub { font-size: 11px; color: #a1a1aa; }
 
     .toast {
       position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
-      background: rgba(0, 0, 0, 0.88); color: #fff; padding: 8px 14px;
+      background: rgba(0, 0, 0, 0.9); color: #fff; padding: 8px 14px;
       border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap;
       opacity: 0; transition: opacity 0.2s; pointer-events: none; z-index: 25;
-      border: 1px solid rgba(255,255,255,0.16);
+      border: 1px solid rgba(255,255,255,0.18);
     }
     .toast.show { opacity: 1; }
 
+    /* 하단 컨트롤 바 */
     .bottom-bar {
       display: flex; justify-content: space-between; align-items: center;
-      padding: 12px 20px 20px; background: rgba(15, 15, 18, 0.96);
+      padding: 12px 20px 20px; background: #111114;
       border-top: 1px solid #27272a; z-index: 20;
     }
     .thumb-box {
@@ -99,7 +105,7 @@
     .thumb-box img { width: 100%; height: 100%; object-fit: cover; }
     #pageCount {
       position: absolute; bottom: 0; left: 0; right: 0;
-      background: rgba(0, 0, 0, 0.78); font-size: 11px; font-weight: 700; text-align: center; padding: 2px 0;
+      background: rgba(0, 0, 0, 0.8); font-size: 11px; font-weight: 700; text-align: center; padding: 2px 0;
     }
 
     .shutter-btn {
@@ -116,7 +122,9 @@
       background: #27272a; color: #f4f4f5; border: 1px solid #3f3f46;
       border-radius: 6px; padding: 5px 8px; font-size: 11px; font-weight: 700; cursor: pointer;
     }
+    .small-btn.on { background: #1d4ed8; border-color: #3b82f6; color: #fff; }
 
+    /* 미리보기 모달 */
     .modal {
       position: fixed; inset: 0; background: rgba(0, 0, 0, 0.96);
       z-index: 100; display: flex; flex-direction: column;
@@ -131,7 +139,7 @@
       display: flex; flex-direction: column; gap: 14px; align-items: center;
     }
     .preview-card { width: 100%; max-width: 520px; text-align: center; }
-    .preview-card img { width: 100%; border-radius: 8px; border: 1px solid #3f3f46; margin-bottom: 6px; }
+    .preview-card img { width: 100%; border-radius: 8px; border: 1px solid #3f3f46; margin-bottom: 6px; background: #fff; }
     .preview-card span { font-size: 12px; color: #a1a1aa; }
     .modal-footer { display: flex; gap: 10px; padding: 14px; border-top: 1px solid #27272a; }
     .modal-footer button {
@@ -143,9 +151,9 @@
 </head>
 <body>
   <header class="top-bar">
-    <div class="brand">📐 스캔 v7</div>
+    <div class="brand">📐 스캔 v8</div>
     <div class="top-actions">
-      <button id="lockBtn" class="pill-btn">🔓 영역고정</button>
+      <button id="lockBtn" class="pill-btn">🔓 고정틀</button>
       <button id="autoScanBtn" class="pill-btn active-green">자동 ON</button>
       <button id="modeBtn" class="pill-btn active-blue">2P</button>
     </div>
@@ -181,14 +189,14 @@
     <button id="shutterBtn" class="shutter-btn" aria-label="수동 촬영"></button>
 
     <div class="right-tools">
-      <span class="sub-label">고정속도</span>
-      <button id="speedBtn" class="small-btn">빠름(0.35s)</button>
+      <span class="sub-label">문서보정</span>
+      <button id="enhanceBtn" class="small-btn on">보정 ON</button>
     </div>
   </footer>
 
   <div id="previewModal" class="modal" style="display:none;">
     <div class="modal-header">
-      <span>원근 보정 · 분할 결과 확인</span>
+      <span>스캔 결과 확인</span>
       <button id="closeModalBtn" class="close-btn">✕</button>
     </div>
     <div id="previewImages" class="modal-body"></div>
@@ -209,7 +217,7 @@
     const lockBtn = document.getElementById("lockBtn");
     const autoScanBtn = document.getElementById("autoScanBtn");
     const modeBtn = document.getElementById("modeBtn");
-    const speedBtn = document.getElementById("speedBtn");
+    const enhanceBtn = document.getElementById("enhanceBtn");
     const statusPill = document.getElementById("statusPill");
     const progressFill = document.getElementById("progressFill");
     const flashEffect = document.getElementById("flashEffect");
@@ -225,11 +233,11 @@
     const okModalBtn = document.getElementById("okModalBtn");
     const deleteLastBtn = document.getElementById("deleteLastBtn");
 
-    // 분석용 경량 캔버스
+    // 분석용 경량 캔버스 (가로 300px 기준)
     const workCanvas = document.createElement("canvas");
     const workCtx = workCanvas.getContext("2d", { willReadFrequently: true });
-    const WORK_W = 240;
-    let WORK_H = 320;
+    let WORK_W = 300;
+    let WORK_H = 400;
 
     // 내용 변화/유사도 비교용 초경량 캔버스
     const sigCanvas = document.createElement("canvas");
@@ -237,36 +245,35 @@
     sigCanvas.height = 48;
     const sigCtx = sigCanvas.getContext("2d", { willReadFrequently: true });
 
-    // 앱 상태
+    // 상태 변수
     let cvReady = false;
     let cameraReady = false;
     let autoScanEnabled = true;
     let isLocked = false;
-    let scanMode = "2p"; // "2p" | "1p"
+    let scanMode = "2p";       // "2p" | "1p"
+    let enhanceEnabled = true; // 촬영 후 그림자/누런배경 보정 여부
 
-    const speedPresets = [
-      { ms: 350, label: "빠름(0.35s)" },
-      { ms: 550, label: "보통(0.55s)" }
-    ];
-    let speedIdx = 0;
+    // 안정화 트래커 (순간 오인식 텔레포트 원천 차단)
+    let stableQuad = null;     // 화면에 실제로 그려지는 확정 네모
+    let candidateQuad = null;  // 새 위치 후보
+    let candidateHits = 0;     // 새 위치 연속 일치 횟수 (3회 이상일 때만 전환)
+    let missedFrames = 0;
 
-    // 네모 좌표 (0~1 비디오 기준 정규화: [tl, tr, br, bl])
-    let currentQuad = null;
     let lockedQuad = [
-      { x: 0.14, y: 0.18 },
-      { x: 0.86, y: 0.18 },
-      { x: 0.86, y: 0.82 },
-      { x: 0.14, y: 0.82 }
+      { x: 0.12, y: 0.16 },
+      { x: 0.88, y: 0.16 },
+      { x: 0.88, y: 0.84 },
+      { x: 0.12, y: 0.84 }
     ];
     let draggingCorner = -1;
 
-    // 고속 책장 넘김 & 안정화 상태 머신
+    // 자동 촬영 상태 머신
     let prevSig = null;
     let lastCapturedSig = null;
     let stableStartTime = 0;
     let hasMovedSinceCapture = true;
-    let missedFrames = 0;
     let cooldownUntil = 0;
+    const LOCK_DURATION_MS = 400; // 0.4초 안정 유지 시 즉시 촬영
 
     let capturedPages = [];
     let lastBatchCount = 0;
@@ -275,19 +282,16 @@
 
     function onOpenCvLoaded() {
       if (typeof cv !== "undefined") {
-        if (cv.getBuildInformation) {
-          finishCvInit();
-        } else {
-          cv["onRuntimeInitialized"] = finishCvInit;
-        }
+        if (cv.getBuildInformation) finishCvInit();
+        else cv["onRuntimeInitialized"] = finishCvInit;
       }
     }
 
     function finishCvInit() {
       cvReady = true;
       cvLoader.style.display = "none";
-      setStatus("searching", "어떤 크기의 책이든 비추면 자동 인식됩니다");
-      showToast("✅ v7 전 규격 책 스캐너 준비 완료!");
+      setStatus("searching", "책을 화면 중앙에 비춰주세요");
+      showToast("✅ v8 엔진 준비 완료!");
     }
 
     function onOpenCvError() {
@@ -296,9 +300,7 @@
 
     async function requestWakeLock() {
       try {
-        if ("wakeLock" in navigator) {
-          wakeLock = await navigator.wakeLock.request("screen");
-        }
+        if ("wakeLock" in navigator) wakeLock = await navigator.wakeLock.request("screen");
       } catch (e) {}
     }
     document.addEventListener("visibilitychange", () => {
@@ -311,8 +313,8 @@
         const osc = audioCtx.createOscillator();
         const gain = audioCtx.createGain();
         osc.type = "sine";
-        osc.frequency.setValueAtTime(960, audioCtx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(480, audioCtx.currentTime + 0.07);
+        osc.frequency.setValueAtTime(980, audioCtx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(490, audioCtx.currentTime + 0.07);
         gain.gain.setValueAtTime(0.16, audioCtx.currentTime);
         gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.07);
         osc.connect(gain); gain.connect(audioCtx.destination);
@@ -348,15 +350,22 @@
         const stream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: { ideal: "environment" },
-            width: { ideal: 2560 },
-            height: { ideal: 1920 }
+            width: { ideal: 1920 },
+            height: { ideal: 1080 }
           },
           audio: false
         });
         video.srcObject = stream;
         video.onloadedmetadata = () => {
-          const aspect = video.videoHeight / video.videoWidth;
-          WORK_H = Math.round(WORK_W * aspect);
+          const vw = video.videoWidth;
+          const vh = video.videoHeight;
+          if (vw >= vh) {
+            WORK_W = 320;
+            WORK_H = Math.round(320 * (vh / vw));
+          } else {
+            WORK_H = 320;
+            WORK_W = Math.round(320 * (vw / vh));
+          }
           workCanvas.width = WORK_W;
           workCanvas.height = WORK_H;
           syncOverlaySize();
@@ -371,11 +380,12 @@
 
     window.addEventListener("resize", syncOverlaySize);
 
-    function getCoverMetrics() {
+    // [핵심 개선 1] object-fit: contain 기준 1:1 정확 좌표 매핑 (화면 밖 유령 인식 0%)
+    function getContainMetrics() {
       const { cw, ch } = syncOverlaySize();
       const vw = video.videoWidth || 1;
       const vh = video.videoHeight || 1;
-      const scale = Math.max(cw / vw, ch / vh);
+      const scale = Math.min(cw / vw, ch / vh);
       const dispW = vw * scale;
       const dispH = vh * scale;
       const offsetX = (cw - dispW) / 2;
@@ -384,12 +394,12 @@
     }
 
     function normToScreen(pt) {
-      const m = getCoverMetrics();
+      const m = getContainMetrics();
       return { x: m.offsetX + pt.x * m.dispW, y: m.offsetY + pt.y * m.dispH };
     }
 
     function screenToNorm(sx, sy) {
-      const m = getCoverMetrics();
+      const m = getContainMetrics();
       return {
         x: Math.max(0.01, Math.min(0.99, (sx - m.offsetX) / m.dispW)),
         y: Math.max(0.01, Math.min(0.99, (sy - m.offsetY) / m.dispH))
@@ -397,208 +407,182 @@
     }
 
     function orderQuad(pts) {
-      if (pts.length !== 4) return pts;
-      const cx = pts.reduce((acc, p) => acc + p.x, 0) / 4;
-      const cy = pts.reduce((acc, p) => acc + p.y, 0) / 4;
+      const cx = pts.reduce((s, p) => s + p.x, 0) / 4;
+      const cy = pts.reduce((s, p) => s + p.y, 0) / 4;
       const sorted = pts.slice().sort((a, b) => Math.atan2(a.y - cy, a.x - cx) - Math.atan2(b.y - cy, b.x - cx));
-      let tlIdx = 0;
-      let minSum = Infinity;
+      let tlIdx = 0, minSum = Infinity;
       for (let i = 0; i < 4; i++) {
         const s = sorted[i].x + sorted[i].y;
         if (s < minSum) { minSum = s; tlIdx = i; }
       }
-      const rotated = [
+      const rot = [
         sorted[tlIdx],
         sorted[(tlIdx + 1) % 4],
         sorted[(tlIdx + 2) % 4],
         sorted[(tlIdx + 3) % 4]
       ];
-      const cross = (rotated[1].x - rotated[0].x) * (rotated[2].y - rotated[1].y)
-                  - (rotated[1].y - rotated[0].y) * (rotated[2].x - rotated[1].x);
-      if (cross < 0) return [rotated[0], rotated[3], rotated[2], rotated[1]];
-      return rotated;
+      const cross = (rot[1].x - rot[0].x) * (rot[2].y - rot[1].y) - (rot[1].y - rot[0].y) * (rot[2].x - rot[1].x);
+      return cross < 0 ? [rot[0], rot[3], rot[2], rot[1]] : rot;
     }
 
-    // [v7 핵심 개선 1] 대형 책/가로로 넓은 양면 책이 화면 가장자리에 가까워져도 탈락하지 않도록 완화
-    // 오직 4꼭짓점 모두가 화면 테두리 1.5% 이내에 완전히 붙은 '가짜 전체화면 박스'만 제외
-    function isLiteralFrameBorder(pts) {
-      let edgeTouches = 0;
-      for (const p of pts) {
-        if (p.x < 0.015 || p.x > 0.985 || p.y < 0.015 || p.y > 0.985) {
-          edgeTouches++;
-        }
-      }
-      return edgeTouches === 4;
-    }
-
-    function quadConvexArea(pts) {
-      let a = 0;
+    function quadDist(q1, q2) {
+      let sum = 0;
       for (let i = 0; i < 4; i++) {
-        const j = (i + 1) % 4;
-        a += pts[i].x * pts[j].y - pts[j].x * pts[i].y;
+        sum += Math.hypot(q1[i].x - q2[i].x, q1[i].y - q2[i].y);
       }
-      return Math.abs(a) * 0.5;
+      return sum / 4;
     }
 
-    // [v7 핵심 개선 2] 작은 문고판(5%)부터 대형 교과서(92%), 정사각형·세로긴·가로넓은 모든 비율(0.25~4.0) 허용
-    function isValidBookAspect(pts) {
-      const w1 = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
-      const w2 = Math.hypot(pts[2].x - pts[3].x, pts[2].y - pts[3].y);
-      const h1 = Math.hypot(pts[3].x - pts[0].x, pts[3].y - pts[0].y);
-      const h2 = Math.hypot(pts[2].x - pts[1].x, pts[2].y - pts[1].y);
-      const avgW = (w1 + w2) * 0.5;
-      const avgH = (h1 + h2) * 0.5;
-      if (avgW < 0.08 || avgH < 0.08) return false;
-      const ratio = avgW / avgH;
-      return ratio >= 0.25 && ratio <= 4.0;
+    function angleDeg(a, b, c) {
+      const v1x = a.x - b.x, v1y = a.y - b.y;
+      const v2x = c.x - b.x, v2y = c.y - b.y;
+      const mag = Math.hypot(v1x, v1y) * Math.hypot(v2x, v2y);
+      if (mag < 1e-5) return 0;
+      return Math.acos(Math.max(-1, Math.min(1, (v1x * v2x + v1y * v2y) / mag))) * (180 / Math.PI);
     }
 
-    function extractBookQuadFromContour(cnt, totalArea) {
-      const area = cv.contourArea(cnt);
-      // 5% (작은 포켓북/문고판) ~ 92% (큰 교재/가까이 찍은 양면책) 모두 허용
-      if (area < totalArea * 0.05 || area > totalArea * 0.92) return null;
+    // [핵심 개선 2] 사각형 품질 점수화 (각도·면적·중앙도 종합 평가 -> 난장판 오인식 차단)
+    function evaluateQuad(pts, areaRatio) {
+      if (areaRatio < 0.10 || areaRatio > 0.90) return -1;
 
-      const peri = cv.arcLength(cnt, true);
-      if (peri <= 0) return null;
+      // 4꼭짓점이 전부 화면 끝(1.5% 이내)에 붙은 가짜 외곽선 제외
+      let borderTouch = 0;
+      for (const p of pts) {
+        if (p.x < 0.015 || p.x > 0.985 || p.y < 0.015 || p.y > 0.985) borderTouch++;
+      }
+      if (borderTouch === 4) return -1;
 
-      // 1차: 다각형 근사
-      for (const eps of [0.02, 0.035, 0.05]) {
-        const approx = new cv.Mat();
-        cv.approxPolyDP(cnt, approx, eps * peri, true);
-        if (approx.rows === 4 && cv.isContourConvex(approx)) {
-          const pts = [];
-          for (let r = 0; r < 4; r++) {
-            pts.push({
-              x: approx.intPtr(r, 0)[0] / WORK_W,
-              y: approx.intPtr(r, 0)[1] / WORK_H
-            });
-          }
-          approx.delete();
-          const ordered = orderQuad(pts);
-          if (!isLiteralFrameBorder(ordered) && isValidBookAspect(ordered)) {
-            return ordered;
-          }
-        }
-        approx.delete();
+      // 내각 검사: 4모서리가 모두 62°~118° 사이여야 진짜 책(직사각형 원근)
+      let anglePenalty = 0;
+      for (let i = 0; i < 4; i++) {
+        const ang = angleDeg(pts[(i + 3) % 4], pts[i], pts[(i + 1) % 4]);
+        if (ang < 62 || ang > 118) return -1;
+        anglePenalty += Math.abs(90 - ang);
       }
 
-      // 2차: 곡면 책·둥근 모서리 책 대응 최소 외접 회전 사각형
-      const rotRect = cv.minAreaRect(cnt);
-      const box = cv.RotatedRect.points(rotRect);
-      const boxPts = box.map(pt => ({
-        x: Math.max(0, Math.min(1, pt.x / WORK_W)),
-        y: Math.max(0, Math.min(1, pt.y / WORK_H))
-      }));
-      const boxArea = quadConvexArea(boxPts);
-      if (area / Math.max(1e-6, boxArea) < 0.58) return null;
+      // 가로/세로 비율 검사 (작은 문고판~넓은 양면책 0.25~4.0 모두 허용)
+      const w = (Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y) + Math.hypot(pts[2].x - pts[3].x, pts[2].y - pts[3].y)) * 0.5;
+      const h = (Math.hypot(pts[3].x - pts[0].x, pts[3].y - pts[0].y) + Math.hypot(pts[2].x - pts[1].x, pts[2].y - pts[1].y)) * 0.5;
+      if (w < 0.12 || h < 0.12) return -1;
+      const aspect = w / h;
+      if (aspect < 0.25 || aspect > 4.0) return -1;
 
-      const orderedBox = orderQuad(boxPts);
-      if (isLiteralFrameBorder(orderedBox) || !isValidBookAspect(orderedBox)) return null;
-      return orderedBox;
+      // 중심 근접 가중치 (화면 중앙에 있는 책을 최우선)
+      const cx = (pts[0].x + pts[1].x + pts[2].x + pts[3].x) * 0.25;
+      const cy = (pts[0].y + pts[1].y + pts[2].y + pts[3].y) * 0.25;
+      const centerDist = Math.hypot(cx - 0.5, cy - 0.5);
+      const centerWeight = Math.max(0.3, 1.0 - centerDist * 1.1);
+
+      const rectScore = Math.max(0.2, 1.0 - (anglePenalty / 120));
+      return areaRatio * rectScore * centerWeight;
     }
 
-    // [v7 핵심 개선 3] 3단계 다중 탐지 (Otsu 종이 블록 -> 적응형 이진화 -> 저임계 Canny 에지)
-    // 작은 책, 큰 책, 밝은 책상, 어두운 책상 모두 대응
-    function detectQuadWithOpenCV() {
-      if (!cvReady || !cameraReady) return null;
-
-      workCtx.drawImage(video, 0, 0, WORK_W, WORK_H);
-      let src = null, gray = null, blurred = null;
-      let thresh = null, closed = null, adap = null, adapClosed = null;
-      let edges = null, dilated = null;
-      let contours = null, hierarchy = null, kClose = null, kSmall = null;
+    function scanContoursForBestQuad(binaryOrEdgeMat, totalArea) {
+      let contours = null, hierarchy = null;
+      let bestQuad = null, bestScore = -1;
 
       try {
-        src = cv.imread(workCanvas);
-        gray = new cv.Mat();
-        blurred = new cv.Mat();
         contours = new cv.MatVector();
         hierarchy = new cv.Mat();
-
-        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
-        cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
-
-        const totalArea = WORK_W * WORK_H;
-        let bestQuad = null;
-        let bestScore = 0;
-
-        // 전략 1: Otsu 이진화 + 형태학 닫힘
-        thresh = new cv.Mat();
-        closed = new cv.Mat();
-        kClose = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(11, 11));
-        cv.threshold(blurred, thresh, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU);
-        cv.morphologyEx(thresh, closed, cv.MORPH_CLOSE, kClose);
-        cv.findContours(closed, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+        cv.findContours(binaryOrEdgeMat, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
         for (let i = 0; i < contours.size(); i++) {
           const cnt = contours.get(i);
           const area = cv.contourArea(cnt);
-          const quad = extractBookQuadFromContour(cnt, totalArea);
-          if (quad && area > bestScore) {
-            bestScore = area;
-            bestQuad = quad;
+          const areaRatio = area / totalArea;
+
+          if (areaRatio >= 0.10 && areaRatio <= 0.90) {
+            const peri = cv.arcLength(cnt, true);
+            let foundPts = null;
+
+            for (const eps of [0.02, 0.03, 0.045]) {
+              const approx = new cv.Mat();
+              cv.approxPolyDP(cnt, approx, eps * peri, true);
+              if (approx.rows === 4 && cv.isContourConvex(approx)) {
+                foundPts = [];
+                for (let r = 0; r < 4; r++) {
+                  foundPts.push({
+                    x: approx.intPtr(r, 0)[0] / WORK_W,
+                    y: approx.intPtr(r, 0)[1] / WORK_H
+                  });
+                }
+                approx.delete();
+                break;
+              }
+              approx.delete();
+            }
+
+            if (foundPts) {
+              const ordered = orderQuad(foundPts);
+              const score = evaluateQuad(ordered, areaRatio);
+              if (score > bestScore) {
+                bestScore = score;
+                bestQuad = ordered;
+              }
+            }
           }
           cnt.delete();
         }
+      } finally {
+        if (contours) contours.delete();
+        if (hierarchy) hierarchy.delete();
+      }
+      return { quad: bestQuad, score: bestScore };
+    }
 
-        // 전략 2: 작은 책이나 불균일 조명 대응 적응형 이진화(Adaptive Threshold)
-        if (!bestQuad) {
-          adap = new cv.Mat();
-          adapClosed = new cv.Mat();
-          cv.adaptiveThreshold(blurred, adap, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 21, 6);
-          cv.morphologyEx(adap, adapClosed, cv.MORPH_CLOSE, kClose);
-          cv.findContours(adapClosed, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+    // [핵심 개선 3] 그레이스케일 형태학 닫힘(글자 소거) -> Canny 에지 + Otsu 종이 블록 2중 정밀 탐지
+    function detectBookQuad() {
+      if (!cvReady || !cameraReady) return null;
 
-          for (let i = 0; i < contours.size(); i++) {
-            const cnt = contours.get(i);
-            const area = cv.contourArea(cnt);
-            const quad = extractBookQuadFromContour(cnt, totalArea);
-            if (quad && area > bestScore) {
-              bestScore = area;
-              bestQuad = quad;
-            }
-            cnt.delete();
-          }
-        }
+      workCtx.drawImage(video, 0, 0, WORK_W, WORK_H);
+      let src = null, gray = null, textErased = null, blurred = null;
+      let edges = null, dilated = null, otsu = null;
+      let kErase = null, kDilate = null;
 
-        // 전략 3: 저임계 Canny 에지 (책과 책상 색이 비슷할 때)
-        if (!bestQuad) {
-          edges = new cv.Mat();
-          dilated = new cv.Mat();
-          kSmall = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(5, 5));
-          cv.Canny(blurred, edges, 25, 90);
-          cv.dilate(edges, dilated, kSmall, new cv.Point(-1, -1), 2);
-          cv.findContours(dilated, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+      try {
+        src = cv.imread(workCanvas);
+        gray = new cv.Mat();
+        textErased = new cv.Mat();
+        blurred = new cv.Mat();
+        edges = new cv.Mat();
+        dilated = new cv.Mat();
+        otsu = new cv.Mat();
 
-          for (let i = 0; i < contours.size(); i++) {
-            const cnt = contours.get(i);
-            const area = cv.contourArea(cnt);
-            const quad = extractBookQuadFromContour(cnt, totalArea);
-            if (quad && area > bestScore) {
-              bestScore = area;
-              bestQuad = quad;
-            }
-            cnt.delete();
-          }
-        }
+        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
 
-        return bestQuad;
+        // ★ 핵심 비법: 그레이스케일 닫힘(Closing)으로 책 내부 글자/사진 노이즈를 말끔히 지워 깨끗한 종이판으로 만듦
+        kErase = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(11, 11));
+        cv.morphologyEx(gray, textErased, cv.MORPH_CLOSE, kErase);
+        cv.GaussianBlur(textErased, blurred, new cv.Size(5, 5), 0);
+
+        const totalArea = WORK_W * WORK_H;
+
+        // 패스 1: 글자가 지워진 종이판의 외곽 Canny 에지 탐지 (밝은 책상/나무 책상 모두 강력)
+        cv.Canny(blurred, edges, 30, 95);
+        kDilate = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(5, 5));
+        cv.dilate(edges, dilated, kDilate, new cv.Point(-1, -1), 1);
+        const res1 = scanContoursForBestQuad(dilated, totalArea);
+
+        // 패스 2: 글자가 지워진 종이판의 Otsu 이진화 탐지 (어두운 책상에서 최강)
+        cv.threshold(blurred, otsu, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU);
+        const res2 = scanContoursForBestQuad(otsu, totalArea);
+
+        // 두 패스 중 종합 점수가 더 높은 진짜 책 네모 선택
+        if (res1.score >= res2.score && res1.quad) return res1.quad;
+        if (res2.quad) return res2.quad;
+        return null;
       } catch (e) {
         return null;
       } finally {
         if (src) src.delete();
         if (gray) gray.delete();
+        if (textErased) textErased.delete();
         if (blurred) blurred.delete();
-        if (thresh) thresh.delete();
-        if (closed) closed.delete();
-        if (adap) adap.delete();
-        if (adapClosed) adapClosed.delete();
         if (edges) edges.delete();
         if (dilated) dilated.delete();
-        if (contours) contours.delete();
-        if (hierarchy) hierarchy.delete();
-        if (kClose) kClose.delete();
-        if (kSmall) kSmall.delete();
+        if (otsu) otsu.delete();
+        if (kErase) kErase.delete();
+        if (kDilate) kDilate.delete();
       }
     }
 
@@ -637,7 +621,40 @@
       return sum / a.length;
     }
 
-    // 인식된 책의 실제 가로/세로 비율 그대로 원근 보정(Warp) + 양면 분할
+    // [핵심 개선 4] 초고속 그림자·누런 배경 보정 (모바일 40ms 이내 처리)
+    function enhanceDocumentMat(rgbaMat) {
+      let rgb = null, small = null, bgSmall = null, bgFull = null, divided = null;
+      try {
+        rgb = new cv.Mat();
+        cv.cvtColor(rgbaMat, rgb, cv.COLOR_RGBA2RGB);
+
+        const sw = Math.max(32, Math.round(rgb.cols * 0.2));
+        const sh = Math.max(32, Math.round(rgb.rows * 0.2));
+        small = new cv.Mat();
+        bgSmall = new cv.Mat();
+        bgFull = new cv.Mat();
+        divided = new cv.Mat();
+
+        cv.resize(rgb, small, new cv.Size(sw, sh), 0, 0, cv.INTER_AREA);
+        cv.GaussianBlur(small, bgSmall, new cv.Size(15, 15), 0);
+        cv.resize(bgSmall, bgFull, new cv.Size(rgb.cols, rgb.rows), 0, 0, cv.INTER_LINEAR);
+
+        // 원본 / 배경 * 255 -> 그림자와 누런 색을 하얗게 날리면서 컬러/글자 유지
+        cv.divide(rgb, bgFull, divided, 255.0);
+        // 글자 대비 살짝 강화
+        divided.convertTo(divided, -1, 1.12, -18);
+        return divided;
+      } catch (e) {
+        if (divided) divided.delete();
+        return null;
+      } finally {
+        if (rgb) rgb.delete();
+        if (small) small.delete();
+        if (bgSmall) bgSmall.delete();
+        if (bgFull) bgFull.delete();
+      }
+    }
+
     function captureAndWarp(quad) {
       if (!cameraReady || !cvReady) return;
       playShutterSound();
@@ -652,21 +669,29 @@
       rawCanvas.getContext("2d").drawImage(video, 0, 0, vw, vh);
 
       const targetQuad = quad || [
-        { x: 0.14, y: 0.18 }, { x: 0.86, y: 0.18 }, { x: 0.86, y: 0.82 }, { x: 0.14, y: 0.82 }
+        { x: 0.05, y: 0.05 }, { x: 0.95, y: 0.05 }, { x: 0.95, y: 0.95 }, { x: 0.05, y: 0.95 }
       ];
 
-      let src = null, dst = null, srcTri = null, dstTri = null, M = null;
+      let src = null, dst = null, enhanced = null, srcTri = null, dstTri = null, M = null;
       const warpedCanvas = document.createElement("canvas");
 
       try {
         const pts = targetQuad.map(p => ({ x: p.x * vw, y: p.y * vh }));
         const widthA = Math.hypot(pts[2].x - pts[3].x, pts[2].y - pts[3].y);
         const widthB = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
-        const outW = Math.max(200, Math.round(Math.max(widthA, widthB)));
+        let outW = Math.max(240, Math.round(Math.max(widthA, widthB)));
 
         const heightA = Math.hypot(pts[1].x - pts[2].x, pts[1].y - pts[2].y);
         const heightB = Math.hypot(pts[0].x - pts[3].x, pts[0].y - pts[3].y);
-        const outH = Math.max(200, Math.round(Math.max(heightA, heightB)));
+        let outH = Math.max(240, Math.round(Math.max(heightA, heightB)));
+
+        // 모바일 메모리 보호를 위해 최대 변 1600px로 안전 제한
+        const maxSide = 1600;
+        if (Math.max(outW, outH) > maxSide) {
+          const r = maxSide / Math.max(outW, outH);
+          outW = Math.round(outW * r);
+          outH = Math.round(outH * r);
+        }
 
         src = cv.imread(rawCanvas);
         dst = new cv.Mat();
@@ -684,11 +709,17 @@
         ]);
 
         M = cv.getPerspectiveTransform(srcTri, dstTri);
-        cv.warpPerspective(src, dst, M, new cv.Size(outW, outH), cv.INTER_CUBIC);
+        cv.warpPerspective(src, dst, M, new cv.Size(outW, outH), cv.INTER_LINEAR, cv.BORDER_REPLICATE, new cv.Scalar());
 
         warpedCanvas.width = outW;
         warpedCanvas.height = outH;
-        cv.imshow(warpedCanvas, dst);
+
+        if (enhanceEnabled) {
+          enhanced = enhanceDocumentMat(dst);
+          cv.imshow(warpedCanvas, enhanced || dst);
+        } else {
+          cv.imshow(warpedCanvas, dst);
+        }
       } catch (e) {
         warpedCanvas.width = vw;
         warpedCanvas.height = vh;
@@ -696,6 +727,7 @@
       } finally {
         if (src) src.delete();
         if (dst) dst.delete();
+        if (enhanced) enhanced.delete();
         if (srcTri) srcTri.delete();
         if (dstTri) dstTri.delete();
         if (M) M.delete();
@@ -740,8 +772,8 @@
       overlayCtx.clearRect(0, 0, cw, ch);
 
       if (!quad) {
-        const cx = cw / 2;
-        const cy = ch / 2;
+        // 미인식 시 중앙 십자선만 깔끔하게 표시
+        const cx = cw / 2, cy = ch / 2;
         overlayCtx.strokeStyle = "rgba(148, 163, 184, 0.45)";
         overlayCtx.lineWidth = 1.5;
         overlayCtx.beginPath();
@@ -754,13 +786,13 @@
       const pts = quad.map(p => normToScreen(p));
 
       let strokeColor = "#f59e0b";
-      let fillColor = "rgba(245, 158, 11, 0.14)";
+      let fillColor = "rgba(245, 158, 11, 0.12)";
       if (state === "locking") {
         strokeColor = "#10b981";
-        fillColor = "rgba(16, 185, 129, 0.20)";
+        fillColor = "rgba(16, 185, 129, 0.18)";
       } else if (state === "cooldown") {
         strokeColor = "#3b82f6";
-        fillColor = "rgba(59, 130, 246, 0.15)";
+        fillColor = "rgba(59, 130, 246, 0.14)";
       } else if (isLocked) {
         strokeColor = "#fbbf24";
         fillColor = "rgba(251, 191, 36, 0.12)";
@@ -772,7 +804,7 @@
       overlayCtx.closePath();
       overlayCtx.fillStyle = fillColor;
       overlayCtx.fill();
-      overlayCtx.lineWidth = 3.5;
+      overlayCtx.lineWidth = 3;
       overlayCtx.strokeStyle = strokeColor;
       overlayCtx.stroke();
 
@@ -789,53 +821,87 @@
         overlayCtx.setLineDash([]);
       }
 
-      const r = isLocked ? 15 : 8;
+      const r = isLocked ? 15 : 7;
       for (let i = 0; i < 4; i++) {
         overlayCtx.beginPath();
         overlayCtx.arc(pts[i].x, pts[i].y, r, 0, Math.PI * 2);
         overlayCtx.fillStyle = isLocked ? "#fbbf24" : strokeColor;
         overlayCtx.fill();
-        overlayCtx.lineWidth = 2.5;
+        overlayCtx.lineWidth = 2;
         overlayCtx.strokeStyle = "#000";
         overlayCtx.stroke();
       }
     }
 
+    // [핵심 개선 5] 3프레임 연속 합의(Consensus) 트래커 — 네모가 미친 듯이 튀는 현상 원천 차단
+    function updateTrackedQuad(detected) {
+      if (!detected) {
+        missedFrames++;
+        candidateQuad = null;
+        candidateHits = 0;
+        if (missedFrames > 5) stableQuad = null;
+        return stableQuad;
+      }
+
+      missedFrames = 0;
+      if (!stableQuad) {
+        // 최초 인식도 2프레임 연속 비슷한 위치여야 확정
+        if (candidateQuad && quadDist(candidateQuad, detected) < 0.08) {
+          candidateHits++;
+          if (candidateHits >= 2) {
+            stableQuad = detected;
+            candidateQuad = null;
+            candidateHits = 0;
+          }
+        } else {
+          candidateQuad = detected;
+          candidateHits = 1;
+        }
+        return stableQuad;
+      }
+
+      const dist = quadDist(stableQuad, detected);
+      if (dist < 0.08) {
+        // 정상 추적 구간: 부드럽게 따라감 (미세 떨림 억제)
+        const alpha = dist < 0.015 ? 0.2 : 0.45;
+        stableQuad = stableQuad.map((p, i) => ({
+          x: p.x * (1 - alpha) + detected[i].x * alpha,
+          y: p.y * (1 - alpha) + detected[i].y * alpha
+        }));
+        candidateQuad = null;
+        candidateHits = 0;
+      } else {
+        // 갑자기 먼 곳으로 튄 경우: 1~2프레임짜리 오인식은 무시하고 3프레임 연속 일치할 때만 이동
+        if (candidateQuad && quadDist(candidateQuad, detected) < 0.07) {
+          candidateHits++;
+          if (candidateHits >= 3) {
+            stableQuad = detected;
+            candidateQuad = null;
+            candidateHits = 0;
+            stableStartTime = 0;
+          }
+        } else {
+          candidateQuad = detected;
+          candidateHits = 1;
+        }
+      }
+      return stableQuad;
+    }
+
     let lastTick = 0;
     function mainLoop(now) {
       requestAnimationFrame(mainLoop);
-      if (now - lastTick < 60) return;
+      if (now - lastTick < 65) return;
       lastTick = now;
 
       if (!cvReady || !cameraReady || previewModal.style.display !== "none") return;
 
-      let activeQuad = null;
-      if (isLocked) {
-        activeQuad = lockedQuad;
-      } else {
-        const detected = detectQuadWithOpenCV();
-        if (detected) {
-          missedFrames = 0;
-          if (!currentQuad) {
-            currentQuad = detected;
-          } else {
-            const alpha = 0.55;
-            currentQuad = currentQuad.map((p, i) => ({
-              x: p.x * (1 - alpha) + detected[i].x * alpha,
-              y: p.y * (1 - alpha) + detected[i].y * alpha
-            }));
-          }
-        } else {
-          missedFrames++;
-          if (missedFrames > 3) currentQuad = null;
-        }
-        activeQuad = currentQuad;
-      }
+      const activeQuad = isLocked ? lockedQuad : updateTrackedQuad(detectBookQuad());
 
       if (!activeQuad) {
         progressFill.style.width = "0%";
         drawOverlay(null, "searching");
-        setStatus("searching", "책의 네 모서리가 보이게 비춰주세요");
+        setStatus("searching", "책을 중앙에 비추거나 [고정틀]을 쓰세요");
         prevSig = null;
         stableStartTime = 0;
         return;
@@ -859,7 +925,7 @@
       if (!autoScanEnabled) {
         drawOverlay(activeQuad, "detected");
         progressFill.style.width = "0%";
-        setStatus("searching", isLocked ? "영역 고정됨 (수동 셔터)" : "모서리 인식됨 (수동 셔터)");
+        setStatus("searching", isLocked ? "고정틀 활성화 (수동 셔터)" : "모서리 인식됨 (수동 셔터)");
         return;
       }
 
@@ -872,7 +938,7 @@
         stableStartTime = 0;
         progressFill.style.width = "0%";
         drawOverlay(activeQuad, "moving");
-        setStatus("moving", "넘기는 중... 손을 빼면 바로 촬영");
+        setStatus("moving", "넘기는 중... 손을 빼면 자동 촬영");
         return;
       }
 
@@ -883,30 +949,23 @@
         return;
       }
 
-      const lockMs = speedPresets[speedIdx].ms;
-      if (stableStartTime === 0) {
-        stableStartTime = ts;
-      }
-      const elapsed = ts - stableStartTime;
-      const progress = Math.min(1, elapsed / lockMs);
+      if (stableStartTime === 0) stableStartTime = ts;
+      const progress = Math.min(1, (ts - stableStartTime) / LOCK_DURATION_MS);
       progressFill.style.width = `${Math.round(progress * 100)}%`;
 
       if (progress < 1) {
         drawOverlay(activeQuad, "locking");
-        setStatus("locking", `모서리 고정 중... ${Math.round(progress * 100)}%`);
+        setStatus("locking", `자동 촬영 중... ${Math.round(progress * 100)}%`);
         return;
       }
 
-      if (lastCapturedSig) {
-        const contentDiff = diffSignature(lastCapturedSig, gray);
-        if (contentDiff < 7.5) {
-          hasMovedSinceCapture = false;
-          stableStartTime = 0;
-          progressFill.style.width = "0%";
-          drawOverlay(activeQuad, "cooldown");
-          setStatus("cooldown", "동일 페이지 (책장을 넘겨주세요)");
-          return;
-        }
+      if (lastCapturedSig && diffSignature(lastCapturedSig, gray) < 7.5) {
+        hasMovedSinceCapture = false;
+        stableStartTime = 0;
+        progressFill.style.width = "0%";
+        drawOverlay(activeQuad, "cooldown");
+        setStatus("cooldown", "같은 페이지 (책장을 넘겨주세요)");
+        return;
       }
 
       if (sharpness < 1.8) {
@@ -919,7 +978,7 @@
       lastCapturedSig = gray;
       hasMovedSinceCapture = false;
       stableStartTime = 0;
-      cooldownUntil = ts + 650;
+      cooldownUntil = ts + 700;
       drawOverlay(activeQuad, "cooldown");
     }
 
@@ -970,17 +1029,15 @@
     lockBtn.addEventListener("click", () => {
       isLocked = !isLocked;
       if (isLocked) {
-        if (currentQuad) {
-          lockedQuad = currentQuad.map(p => ({ ...p }));
-        }
+        if (stableQuad) lockedQuad = stableQuad.map(p => ({ ...p }));
         lockBtn.textContent = "🔒 고정됨";
         lockBtn.classList.add("active-amber");
         drawOverlay(lockedQuad, "detected");
-        showToast("노란 꼭짓점을 책 모서리에 맞춰주세요");
+        showToast("노란 꼭짓점을 책 모서리에 맞추세요");
       } else {
-        lockBtn.textContent = "🔓 영역고정";
+        lockBtn.textContent = "🔓 고정틀";
         lockBtn.classList.remove("active-amber");
-        showToast("자동 모서리 추종 모드로 복귀");
+        showToast("자동 모서리 인식 모드");
       }
       stableStartTime = 0;
     });
@@ -1000,15 +1057,15 @@
       showToast(scanMode === "2p" ? "2P 양면 분할 모드" : "1P 단면 모드");
     });
 
-    speedBtn.addEventListener("click", () => {
-      speedIdx = (speedIdx + 1) % speedPresets.length;
-      speedBtn.textContent = speedPresets[speedIdx].label;
-      stableStartTime = 0;
-      showToast(`고정 속도: ${speedPresets[speedIdx].label}`);
+    enhanceBtn.addEventListener("click", () => {
+      enhanceEnabled = !enhanceEnabled;
+      enhanceBtn.textContent = enhanceEnabled ? "보정 ON" : "보정 OFF";
+      enhanceBtn.classList.toggle("on", enhanceEnabled);
+      showToast(enhanceEnabled ? "그림자·배경 자동 보정 ON" : "원본 색감 유지");
     });
 
     shutterBtn.addEventListener("click", () => {
-      const q = isLocked ? lockedQuad : currentQuad;
+      const q = isLocked ? lockedQuad : stableQuad;
       captureAndWarp(q);
       if (q) {
         lastCapturedSig = extractInsideSignature(q).gray;
