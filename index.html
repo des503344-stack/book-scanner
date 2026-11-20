@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>북 스캔 스튜디오</title>
+  <link rel="stylesheet" href="/mobile/style.css">
+</head>
+<body>
+  <header class="top-bar">
+    <div class="book-selector">
+      <select id="bookSelect"></select>
+      <button id="newBookBtn" class="icon-btn" title="새 책 추가">＋</button>
+    </div>
+    <div class="top-actions">
+      <button id="cropModeBtn" class="crop-btn" title="모서리 인식 방식 전환">자동 모서리</button>
+      <button id="autoToggleBtn" class="auto-btn" title="자동 촬영 켜기/끄기">자동 OFF</button>
+      <button id="modeBtn" class="mode-btn">2P</button>
+    </div>
+  </header>
+
+  <div id="autoControlBar" class="auto-control-bar" style="display:none;">
+    <div class="auto-status-row">
+      <span id="autoStateBadge" class="auto-badge waiting">책장을 넘기면 자동 촬영됩니다</span>
+      <button id="autoPauseBtn" class="pause-btn">일시정지</button>
+    </div>
+    <div class="auto-slider-row">
+      <label for="sensitivitySlider">움직임 민감도</label>
+      <input type="range" id="sensitivitySlider" min="1" max="10" value="5">
+      <span id="sensitivityVal">5</span>
+    </div>
+  </div>
+
+  <main class="camera-container">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="captureCanvas" style="display:none;"></canvas>
+
+    <div id="guideOverlay" class="guide-overlay mode-2p">
+      <div class="guide-frame">
+        <div class="center-line"></div>
+      </div>
+    </div>
+
+    <div id="flashEffect" class="flash-effect"></div>
+    <div id="statusToast" class="status-toast">카메라 준비 중...</div>
+  </main>
+
+  <footer class="bottom-bar">
+    <div id="thumbBox" class="thumb-box" title="방금 찍은 보정본 보기">
+      <img id="lastThumb" src="" alt="" style="display:none;">
+      <span id="pageCount">0쪽</span>
+    </div>
+
+    <button id="shutterBtn" class="shutter-btn" aria-label="촬영"></button>
+
+    <div class="right-controls">
+      <span id="connStatus" class="conn-dot" title="PC 연결됨">●</span>
+    </div>
+  </footer>
+
+  <div id="previewModal" class="modal" style="display:none;">
+    <div class="modal-header">
+      <span id="previewTitle">보정 결과 확인</span>
+      <button id="closeModalBtn" class="close-btn">✕</button>
+    </div>
+    <div id="previewImages" class="modal-body"></div>
+    <div class="modal-footer">
+      <button id="deleteLastBtn" class="danger-btn">방금 찍은 페이지 삭제</button>
+      <button id="okModalBtn" class="primary-btn">확인 (계속 촬영)</button>
+    </div>
+  </div>
+
+  <script src="/mobile/auto_capture.js"></script>
+  <script src="/mobile/app.js"></script>
+</body>
+</html>
