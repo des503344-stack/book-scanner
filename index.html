@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>북 스캔 스튜디오 v6 (실제 모서리 추종 + 고속 자동촬영)</title>
+  <title>북 스캔 스튜디오 v7 (모든 책 크기·비율 자동 인식)</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
     body {
@@ -109,7 +109,7 @@
     .shutter-btn:active { transform: scale(0.92); background: #d4d4d8; }
 
     .right-tools {
-      width: 64px; display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
+      width: 68px; display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
     }
     .sub-label { font-size: 10px; color: #a1a1aa; }
     .small-btn {
@@ -143,7 +143,7 @@
 </head>
 <body>
   <header class="top-bar">
-    <div class="brand">📐 스캔 v6</div>
+    <div class="brand">📐 스캔 v7</div>
     <div class="top-actions">
       <button id="lockBtn" class="pill-btn">🔓 영역고정</button>
       <button id="autoScanBtn" class="pill-btn active-green">자동 ON</button>
@@ -244,7 +244,6 @@
     let isLocked = false;
     let scanMode = "2p"; // "2p" | "1p"
 
-    // 고정 시간 프리셋 (기본 0.35초 — 기존 0.65~0.75초의 약 절반 속도!)
     const speedPresets = [
       { ms: 350, label: "빠름(0.35s)" },
       { ms: 550, label: "보통(0.55s)" }
@@ -287,8 +286,8 @@
     function finishCvInit() {
       cvReady = true;
       cvLoader.style.display = "none";
-      setStatus("searching", "책 모서리를 비추면 자동으로 잡힙니다");
-      showToast("✅ v6 고속 모서리 스캐너 준비 완료!");
+      setStatus("searching", "어떤 크기의 책이든 비추면 자동 인식됩니다");
+      showToast("✅ v7 전 규격 책 스캐너 준비 완료!");
     }
 
     function onOpenCvError() {
@@ -420,16 +419,16 @@
       return rotated;
     }
 
-    // [핵심 개선 1] 화면 끝을 통째로 잡는 오인식 차단 + 실제 책 4모서리 사각형만 채택
-    function isFullScreenBox(pts) {
+    // [v7 핵심 개선 1] 대형 책/가로로 넓은 양면 책이 화면 가장자리에 가까워져도 탈락하지 않도록 완화
+    // 오직 4꼭짓점 모두가 화면 테두리 1.5% 이내에 완전히 붙은 '가짜 전체화면 박스'만 제외
+    function isLiteralFrameBorder(pts) {
       let edgeTouches = 0;
       for (const p of pts) {
-        if (p.x < 0.035 || p.x > 0.965 || p.y < 0.035 || p.y > 0.965) {
+        if (p.x < 0.015 || p.x > 0.985 || p.y < 0.015 || p.y > 0.985) {
           edgeTouches++;
         }
       }
-      // 3개 이상 꼭짓점이 화면 끝에 딱 붙으면 배경/화면 외곽 오인식으로 간주
-      return edgeTouches >= 3;
+      return edgeTouches === 4;
     }
 
     function quadConvexArea(pts) {
@@ -441,15 +440,28 @@
       return Math.abs(a) * 0.5;
     }
 
+    // [v7 핵심 개선 2] 작은 문고판(5%)부터 대형 교과서(92%), 정사각형·세로긴·가로넓은 모든 비율(0.25~4.0) 허용
+    function isValidBookAspect(pts) {
+      const w1 = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+      const w2 = Math.hypot(pts[2].x - pts[3].x, pts[2].y - pts[3].y);
+      const h1 = Math.hypot(pts[3].x - pts[0].x, pts[3].y - pts[0].y);
+      const h2 = Math.hypot(pts[2].x - pts[1].x, pts[2].y - pts[1].y);
+      const avgW = (w1 + w2) * 0.5;
+      const avgH = (h1 + h2) * 0.5;
+      if (avgW < 0.08 || avgH < 0.08) return false;
+      const ratio = avgW / avgH;
+      return ratio >= 0.25 && ratio <= 4.0;
+    }
+
     function extractBookQuadFromContour(cnt, totalArea) {
       const area = cv.contourArea(cnt);
-      // 책 면적은 화면의 10% ~ 78% 범위가 정상 (78% 초과는 화면 전체/배경 오인식 확률 높음)
-      if (area < totalArea * 0.10 || area > totalArea * 0.78) return null;
+      // 5% (작은 포켓북/문고판) ~ 92% (큰 교재/가까이 찍은 양면책) 모두 허용
+      if (area < totalArea * 0.05 || area > totalArea * 0.92) return null;
 
       const peri = cv.arcLength(cnt, true);
       if (peri <= 0) return null;
 
-      // 1차: 다각형 근사로 4꼭짓점 직접 추출
+      // 1차: 다각형 근사
       for (const eps of [0.02, 0.035, 0.05]) {
         const approx = new cv.Mat();
         cv.approxPolyDP(cnt, approx, eps * peri, true);
@@ -463,34 +475,38 @@
           }
           approx.delete();
           const ordered = orderQuad(pts);
-          if (isFullScreenBox(ordered)) return null;
-          return ordered;
+          if (!isLiteralFrameBorder(ordered) && isValidBookAspect(ordered)) {
+            return ordered;
+          }
         }
         approx.delete();
       }
 
-      // 2차: 책 곡면 때문에 꼭짓점이 여러 개로 잡힐 때 최소 외접 회전 사각형(minAreaRect)으로 책 4모서리 추출
+      // 2차: 곡면 책·둥근 모서리 책 대응 최소 외접 회전 사각형
       const rotRect = cv.minAreaRect(cnt);
       const box = cv.RotatedRect.points(rotRect);
       const boxPts = box.map(pt => ({
-        x: pt.x / WORK_W,
-        y: pt.y / WORK_H
+        x: Math.max(0, Math.min(1, pt.x / WORK_W)),
+        y: Math.max(0, Math.min(1, pt.y / WORK_H))
       }));
       const boxArea = quadConvexArea(boxPts);
-      // 실제 윤곽선 면적이 회전사각형 면적의 62% 이상일 때만 진짜 책 윤곽으로 인정
-      if (area / Math.max(1e-6, boxArea) < 0.62) return null;
+      if (area / Math.max(1e-6, boxArea) < 0.58) return null;
 
       const orderedBox = orderQuad(boxPts);
-      if (isFullScreenBox(orderedBox)) return null;
+      if (isLiteralFrameBorder(orderedBox) || !isValidBookAspect(orderedBox)) return null;
       return orderedBox;
     }
 
+    // [v7 핵심 개선 3] 3단계 다중 탐지 (Otsu 종이 블록 -> 적응형 이진화 -> 저임계 Canny 에지)
+    // 작은 책, 큰 책, 밝은 책상, 어두운 책상 모두 대응
     function detectQuadWithOpenCV() {
       if (!cvReady || !cameraReady) return null;
 
       workCtx.drawImage(video, 0, 0, WORK_W, WORK_H);
-      let src = null, gray = null, blurred = null, thresh = null, closed = null;
-      let edges = null, dilated = null, contours = null, hierarchy = null, kClose = null, kDilate = null;
+      let src = null, gray = null, blurred = null;
+      let thresh = null, closed = null, adap = null, adapClosed = null;
+      let edges = null, dilated = null;
+      let contours = null, hierarchy = null, kClose = null, kSmall = null;
 
       try {
         src = cv.imread(workCanvas);
@@ -506,10 +522,10 @@
         let bestQuad = null;
         let bestScore = 0;
 
-        // 전략 1: Otsu 이진화 + 형태학 닫힘 (책 종이 블록 추출)
+        // 전략 1: Otsu 이진화 + 형태학 닫힘
         thresh = new cv.Mat();
         closed = new cv.Mat();
-        kClose = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(13, 13));
+        kClose = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(11, 11));
         cv.threshold(blurred, thresh, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU);
         cv.morphologyEx(thresh, closed, cv.MORPH_CLOSE, kClose);
         cv.findContours(closed, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
@@ -518,24 +534,40 @@
           const cnt = contours.get(i);
           const area = cv.contourArea(cnt);
           const quad = extractBookQuadFromContour(cnt, totalArea);
-          // 너무 화면 끝까지 뻗은 영역에는 패널티를 주어 실제 책 영역을 우선 선택
-          if (quad) {
-            const score = area * (isFullScreenBox(quad) ? 0.1 : 1.0);
-            if (score > bestScore) {
-              bestScore = score;
-              bestQuad = quad;
-            }
+          if (quad && area > bestScore) {
+            bestScore = area;
+            bestQuad = quad;
           }
           cnt.delete();
         }
 
-        // 전략 2: Canny 에지 팽창으로 책 외곽선 탐지
+        // 전략 2: 작은 책이나 불균일 조명 대응 적응형 이진화(Adaptive Threshold)
+        if (!bestQuad) {
+          adap = new cv.Mat();
+          adapClosed = new cv.Mat();
+          cv.adaptiveThreshold(blurred, adap, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 21, 6);
+          cv.morphologyEx(adap, adapClosed, cv.MORPH_CLOSE, kClose);
+          cv.findContours(adapClosed, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+          for (let i = 0; i < contours.size(); i++) {
+            const cnt = contours.get(i);
+            const area = cv.contourArea(cnt);
+            const quad = extractBookQuadFromContour(cnt, totalArea);
+            if (quad && area > bestScore) {
+              bestScore = area;
+              bestQuad = quad;
+            }
+            cnt.delete();
+          }
+        }
+
+        // 전략 3: 저임계 Canny 에지 (책과 책상 색이 비슷할 때)
         if (!bestQuad) {
           edges = new cv.Mat();
           dilated = new cv.Mat();
-          kDilate = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(5, 5));
-          cv.Canny(blurred, edges, 45, 130);
-          cv.dilate(edges, dilated, kDilate, new cv.Point(-1, -1), 2);
+          kSmall = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(5, 5));
+          cv.Canny(blurred, edges, 25, 90);
+          cv.dilate(edges, dilated, kSmall, new cv.Point(-1, -1), 2);
           cv.findContours(dilated, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
           for (let i = 0; i < contours.size(); i++) {
@@ -559,12 +591,14 @@
         if (blurred) blurred.delete();
         if (thresh) thresh.delete();
         if (closed) closed.delete();
+        if (adap) adap.delete();
+        if (adapClosed) adapClosed.delete();
         if (edges) edges.delete();
         if (dilated) dilated.delete();
         if (contours) contours.delete();
         if (hierarchy) hierarchy.delete();
         if (kClose) kClose.delete();
-        if (kDilate) kDilate.delete();
+        if (kSmall) kSmall.delete();
       }
     }
 
@@ -603,7 +637,7 @@
       return sum / a.length;
     }
 
-    // [핵심 개선 2] 인식된 책 네모 4꼭짓점을 정확히 원근 펴기(Warp) + 양면 분할
+    // 인식된 책의 실제 가로/세로 비율 그대로 원근 보정(Warp) + 양면 분할
     function captureAndWarp(quad) {
       if (!cameraReady || !cvReady) return;
       playShutterSound();
@@ -628,11 +662,11 @@
         const pts = targetQuad.map(p => ({ x: p.x * vw, y: p.y * vh }));
         const widthA = Math.hypot(pts[2].x - pts[3].x, pts[2].y - pts[3].y);
         const widthB = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
-        const outW = Math.max(240, Math.round(Math.max(widthA, widthB)));
+        const outW = Math.max(200, Math.round(Math.max(widthA, widthB)));
 
         const heightA = Math.hypot(pts[1].x - pts[2].x, pts[1].y - pts[2].y);
         const heightB = Math.hypot(pts[0].x - pts[3].x, pts[0].y - pts[3].y);
-        const outH = Math.max(240, Math.round(Math.max(heightA, heightB)));
+        const outH = Math.max(200, Math.round(Math.max(heightA, heightB)));
 
         src = cv.imread(rawCanvas);
         dst = new cv.Mat();
@@ -688,7 +722,7 @@
       }
 
       updateThumb();
-      showToast(`📸 모서리 보정 완료! (누적 ${capturedPages.length}쪽)`);
+      showToast(`📸 스캔 완료! (누적 ${capturedPages.length}쪽)`);
     }
 
     function updateThumb() {
@@ -701,13 +735,11 @@
       }
     }
 
-    // [핵심 개선 3] 화면 끝에 고정된 가이드가 아니라, 실제 인식된 책 모서리 다각형만 정확히 표시
     function drawOverlay(quad, state) {
       const { cw, ch } = syncOverlaySize();
       overlayCtx.clearRect(0, 0, cw, ch);
 
       if (!quad) {
-        // 미인식 시 중앙에 작은 타겟 십자만 표시 (양옆 화면 끝 고정 박스는 제거)
         const cx = cw / 2;
         const cy = ch / 2;
         overlayCtx.strokeStyle = "rgba(148, 163, 184, 0.45)";
@@ -744,7 +776,6 @@
       overlayCtx.strokeStyle = strokeColor;
       overlayCtx.stroke();
 
-      // 2P 중앙 분할선 (인식된 책 네모의 위/아래 중앙 연결)
       if (scanMode === "2p") {
         const topM = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
         const botM = { x: (pts[3].x + pts[2].x) / 2, y: (pts[3].y + pts[2].y) / 2 };
@@ -758,7 +789,6 @@
         overlayCtx.setLineDash([]);
       }
 
-      // 4개 모서리 원형 마커
       const r = isLocked ? 15 : 8;
       for (let i = 0; i < 4; i++) {
         overlayCtx.beginPath();
@@ -771,7 +801,6 @@
       }
     }
 
-    // [핵심 개선 4] 인식 후 촬영까지 걸리는 시간 약 절반 단축 (기본 0.35초 + 쿨다운 0.65초 + 루프 60ms)
     let lastTick = 0;
     function mainLoop(now) {
       requestAnimationFrame(mainLoop);
@@ -790,7 +819,6 @@
           if (!currentQuad) {
             currentQuad = detected;
           } else {
-            // 빠른 반응성을 위해 EMA 가중치를 0.55로 상향
             const alpha = 0.55;
             currentQuad = currentQuad.map((p, i) => ({
               x: p.x * (1 - alpha) + detected[i].x * alpha,
@@ -839,7 +867,6 @@
       const motion = diffSignature(prevSig, gray);
       prevSig = gray;
 
-      // 책장 넘김 움직임 감지
       if (motion > 5.2) {
         hasMovedSinceCapture = true;
         stableStartTime = 0;
@@ -856,7 +883,6 @@
         return;
       }
 
-      // 고정 시간 타이머 (기본 0.35초)
       const lockMs = speedPresets[speedIdx].ms;
       if (stableStartTime === 0) {
         stableStartTime = ts;
@@ -871,7 +897,6 @@
         return;
       }
 
-      // 직전 페이지와 동일 화면 중복 촬영 방지
       if (lastCapturedSig) {
         const contentDiff = diffSignature(lastCapturedSig, gray);
         if (contentDiff < 7.5) {
@@ -884,7 +909,6 @@
         }
       }
 
-      // 초점 최소 기준 완화해 빠른 촬영 확보
       if (sharpness < 1.8) {
         drawOverlay(activeQuad, "moving");
         setStatus("moving", "초점 확인 중...");
