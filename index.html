@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>북 스캔 스튜디오 v4 (OpenCV.js + 영역고정)</title>
+  <title>북 스캔 스튜디오 v5 (정밀 영역 인식 + 자동 촬영)</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
     body {
@@ -149,7 +149,7 @@
 </head>
 <body>
   <header class="top-bar">
-    <div class="brand">📐 스캔 v4</div>
+    <div class="brand">📐 스캔 v5</div>
     <div class="top-actions">
       <button id="lockBtn" class="pill-btn">🔓 영역고정</button>
       <button id="autoScanBtn" class="pill-btn active-green">자동 ON</button>
@@ -204,7 +204,7 @@
     </div>
   </div>
 
-  <!-- OpenCV.js 공식 CDN -->
+  <!-- OpenCV.js CDN -->
   <script async src="https://docs.opencv.org/4.8.0/opencv.js" onload="onOpenCvLoaded()" onerror="onOpenCvError()"></script>
 
   <script>
@@ -232,7 +232,7 @@
     const okModalBtn = document.getElementById("okModalBtn");
     const deleteLastBtn = document.getElementById("deleteLastBtn");
 
-    // 분석용 경량 캔버스 (OpenCV 처리 속도 최적화)
+    // 분석용 경량 캔버스
     const workCanvas = document.createElement("canvas");
     const workCtx = workCanvas.getContext("2d", { willReadFrequently: true });
     const WORK_W = 240;
@@ -252,7 +252,7 @@
     let scanMode = "2p";          // "2p" | "1p"
     let safetyPadding = 0.02;     // 2% 안전 여백
 
-    // 네모 좌표 (0~1 정규화: [tl, tr, br, bl])
+    // 네모 좌표 (0~1 비디오 기준 정규화: [tl, tr, br, bl])
     let currentQuad = null;
     let lockedQuad = [
       { x: 0.08, y: 0.12 },
@@ -260,13 +260,13 @@
       { x: 0.92, y: 0.88 },
       { x: 0.08, y: 0.88 }
     ];
-    let draggingCorner = -1;      // 드래그 중인 꼭짓점 인덱스 (0~3)
+    let draggingCorner = -1;
 
     // 3단계 책장 넘김 & 안정화 상태 머신
-    let prevSig = null;           // 직전 프레임 네모 안쪽 시그니처 (움직임 측정용)
-    let lastCapturedSig = null;   // 직전 촬영된 페이지 시그니처 (중복 촬영 방지용)
+    let prevSig = null;
+    let lastCapturedSig = null;
     let stableStartTime = 0;
-    let hasMovedSinceCapture = true; // 첫 장은 바로 촬영 허용
+    let hasMovedSinceCapture = true;
     let missedFrames = 0;
     let cooldownUntil = 0;
 
@@ -275,7 +275,6 @@
     let audioCtx = null;
     let wakeLock = null;
 
-    // OpenCV.js 로드 콜백
     function onOpenCvLoaded() {
       if (typeof cv !== "undefined") {
         if (cv.getBuildInformation) {
@@ -290,14 +289,13 @@
       cvReady = true;
       cvLoader.style.display = "none";
       setStatus("searching", "책을 비추거나 [영역고정]을 누르세요");
-      showToast("✅ OpenCV 엔진 준비 완료!");
+      showToast("✅ OpenCV v5 엔진 준비 완료!");
     }
 
     function onOpenCvError() {
       cvLoader.innerHTML = '<div class="loader-text">❌ OpenCV 로딩 실패</div><div class="loader-sub">인터넷 연결을 확인하고 새로고침 해주세요</div>';
     }
 
-    // 화면 꺼짐 방지 (Screen Wake Lock API)
     async function requestWakeLock() {
       try {
         if ("wakeLock" in navigator) {
@@ -336,7 +334,18 @@
       statusPill.textContent = text;
     }
 
-    // 1. 카메라 초기화
+    // [버그 수정 1] overlayCanvas 실제 CSS 픽셀 크기를 동기화하여 좌표 어긋남 원천 차단
+    function syncOverlaySize() {
+      const rect = overlayCanvas.getBoundingClientRect();
+      const cw = Math.max(1, Math.round(rect.width));
+      const ch = Math.max(1, Math.round(rect.height));
+      if (overlayCanvas.width !== cw || overlayCanvas.height !== ch) {
+        overlayCanvas.width = cw;
+        overlayCanvas.height = ch;
+      }
+      return { cw, ch };
+    }
+
     async function initCamera() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
@@ -353,6 +362,7 @@
           WORK_H = Math.round(WORK_W * aspect);
           workCanvas.width = WORK_W;
           workCanvas.height = WORK_H;
+          syncOverlaySize();
           cameraReady = true;
           requestWakeLock();
           requestAnimationFrame(mainLoop);
@@ -362,10 +372,10 @@
       }
     }
 
-    // 2. 정확한 화면 <-> 비디오 좌표 변환 (object-fit: cover 대응)
+    window.addEventListener("resize", syncOverlaySize);
+
     function getCoverMetrics() {
-      const cw = overlayCanvas.width || 1;
-      const ch = overlayCanvas.height || 1;
+      const { cw, ch } = syncOverlaySize();
       const vw = video.videoWidth || 1;
       const vh = video.videoHeight || 1;
       const scale = Math.max(cw / vw, ch / vh);
@@ -389,77 +399,151 @@
       };
     }
 
-    // 3. 4개 꼭짓점 정렬 [tl, tr, br, bl]
+    // [버그 수정 2] 기하학적(각도 기반) 4꼭짓점 정렬 [tl, tr, br, bl] — 극단적 기울기에도 꼬이지 않음
     function orderQuad(pts) {
-      let tl = pts[0], tr = pts[0], br = pts[0], bl = pts[0];
-      let minS = Infinity, maxS = -Infinity, minD = Infinity, maxD = -Infinity;
-      for (const p of pts) {
-        const s = p.x + p.y;
-        const d = p.x - p.y;
-        if (s < minS) { minS = s; tl = p; }
-        if (s > maxS) { maxS = s; br = p; }
-        if (d > maxD) { maxD = d; tr = p; }
-        if (d < minD) { minD = d; bl = p; }
+      if (pts.length !== 4) return pts;
+      const cx = pts.reduce((acc, p) => acc + p.x, 0) / 4;
+      const cy = pts.reduce((acc, p) => acc + p.y, 0) / 4;
+
+      // 중심 기준 반시계 방향 정렬 후 좌상단(x+y 최소) 시작점으로 회전
+      const sorted = pts.slice().sort((a, b) => Math.atan2(a.y - cy, a.x - cx) - Math.atan2(b.y - cy, b.x - cx));
+      let tlIdx = 0;
+      let minSum = Infinity;
+      for (let i = 0; i < 4; i++) {
+        const s = sorted[i].x + sorted[i].y;
+        if (s < minSum) { minSum = s; tlIdx = i; }
       }
-      return [tl, tr, br, bl];
+      const rotated = [
+        sorted[tlIdx],
+        sorted[(tlIdx + 1) % 4],
+        sorted[(tlIdx + 2) % 4],
+        sorted[(tlIdx + 3) % 4]
+      ];
+      // 시계 방향 [tl, tr, br, bl] 보장
+      const cross = (rotated[1].x - rotated[0].x) * (rotated[2].y - rotated[1].y)
+                  - (rotated[1].y - rotated[0].y) * (rotated[2].x - rotated[1].x);
+      if (cross < 0) {
+        return [rotated[0], rotated[3], rotated[2], rotated[1]];
+      }
+      return rotated;
     }
 
-    // 4. OpenCV.js 기반 네모 탐지 (메모리 누수 0% 보장 try-finally)
+    // [인식률 대폭 개선] 다중 전략(Otsu 종이 블록 + Canny 에지) + Convex Hull 극점 fallback
+    function extractQuadCandidate(cnt, totalArea) {
+      const area = cv.contourArea(cnt);
+      if (area < totalArea * 0.14 || area > totalArea * 0.96) return null;
+
+      const peri = cv.arcLength(cnt, true);
+      if (peri <= 0) return null;
+
+      // 1순위: 다각형 근사로 4꼭짓점 추출
+      for (const eps of [0.02, 0.035, 0.05]) {
+        const approx = new cv.Mat();
+        cv.approxPolyDP(cnt, approx, eps * peri, true);
+        if (approx.rows === 4 && cv.isContourConvex(approx)) {
+          const pts = [];
+          for (let r = 0; r < 4; r++) {
+            pts.push({
+              x: approx.intPtr(r, 0)[0] / WORK_W,
+              y: approx.intPtr(r, 0)[1] / WORK_H
+            });
+          }
+          approx.delete();
+          return orderQuad(pts);
+        }
+        approx.delete();
+      }
+
+      // 2순위: 책 곡면 때문에 꼭짓점이 5개 이상인 경우 Convex Hull 4극점 추출
+      const hull = new cv.Mat();
+      cv.convexHull(cnt, hull, false, true);
+      if (hull.rows >= 4) {
+        const hPts = [];
+        for (let r = 0; r < hull.rows; r++) {
+          hPts.push({
+            x: hull.intPtr(r, 0)[0] / WORK_W,
+            y: hull.intPtr(r, 0)[1] / WORK_H
+          });
+        }
+        hull.delete();
+
+        let tl = hPts[0], tr = hPts[0], br = hPts[0], bl = hPts[0];
+        let minS = Infinity, maxS = -Infinity, minD = Infinity, maxD = -Infinity;
+        for (const p of hPts) {
+          const s = p.x + p.y;
+          const d = p.x - p.y;
+          if (s < minS) { minS = s; tl = p; }
+          if (s > maxS) { maxS = s; br = p; }
+          if (d > maxD) { maxD = d; tr = p; }
+          if (d < minD) { minD = d; bl = p; }
+        }
+        return orderQuad([tl, tr, br, bl]);
+      }
+      hull.delete();
+      return null;
+    }
+
     function detectQuadWithOpenCV() {
       if (!cvReady || !cameraReady) return null;
 
       workCtx.drawImage(video, 0, 0, WORK_W, WORK_H);
-      let src = null, gray = null, blurred = null, edges = null, dilated = null;
-      let contours = null, hierarchy = null, kernel = null;
+      let src = null, gray = null, blurred = null, thresh = null, closed = null;
+      let edges = null, dilated = null, contours = null, hierarchy = null, kClose = null, kDilate = null;
 
       try {
         src = cv.imread(workCanvas);
         gray = new cv.Mat();
         blurred = new cv.Mat();
-        edges = new cv.Mat();
-        dilated = new cv.Mat();
         contours = new cv.MatVector();
         hierarchy = new cv.Mat();
 
         cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
         cv.GaussianBlur(gray, blurred, new cv.Size(5, 5), 0);
 
-        // Canny 에지 + 형태학 닫힘으로 책 테두리 연결 (밝은 책상 대응)
-        cv.Canny(blurred, edges, 40, 120);
-        kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(5, 5));
-        cv.dilate(edges, dilated, kernel, new cv.Point(-1, -1), 2);
-        cv.findContours(dilated, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
-
         const totalArea = WORK_W * WORK_H;
         let bestQuad = null;
-        let maxArea = 0;
+        let bestScore = 0;
+
+        // 전략 A: Otsu 이진화 + 큰 닫힘 커널(글자/책등 그림자를 메워 책 전체를 하나의 흰 영역으로 추출)
+        thresh = new cv.Mat();
+        closed = new cv.Mat();
+        kClose = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(15, 15));
+        cv.threshold(blurred, thresh, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU);
+        cv.morphologyEx(thresh, closed, cv.MORPH_CLOSE, kClose);
+        cv.findContours(closed, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
         for (let i = 0; i < contours.size(); i++) {
           const cnt = contours.get(i);
           const area = cv.contourArea(cnt);
-          if (area < totalArea * 0.18 || area > totalArea * 0.95) {
-            cnt.delete();
-            continue;
+          const quad = extractQuadCandidate(cnt, totalArea);
+          if (quad && area > bestScore) {
+            bestScore = area;
+            bestQuad = quad;
           }
-
-          const peri = cv.arcLength(cnt, true);
-          const approx = new cv.Mat();
-          cv.approxPolyDP(cnt, approx, 0.03 * peri, true);
-
-          if (approx.rows === 4 && cv.isContourConvex(approx) && area > maxArea) {
-            maxArea = area;
-            const pts = [];
-            for (let r = 0; r < 4; r++) {
-              pts.push({
-                x: approx.intPtr(r, 0)[0] / WORK_W,
-                y: approx.intPtr(r, 0)[1] / WORK_H
-              });
-            }
-            bestQuad = orderQuad(pts);
-          }
-          approx.delete();
           cnt.delete();
         }
+
+        // 전략 B: 전략 A에서 못 찾으면 Canny 에지 팽창으로 재탐색
+        if (!bestQuad) {
+          edges = new cv.Mat();
+          dilated = new cv.Mat();
+          kDilate = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(5, 5));
+          cv.Canny(blurred, edges, 35, 110);
+          cv.dilate(edges, dilated, kDilate, new cv.Point(-1, -1), 2);
+          cv.findContours(dilated, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+
+          for (let i = 0; i < contours.size(); i++) {
+            const cnt = contours.get(i);
+            const area = cv.contourArea(cnt);
+            const quad = extractQuadCandidate(cnt, totalArea);
+            if (quad && area > bestScore) {
+              bestScore = area;
+              bestQuad = quad;
+            }
+            cnt.delete();
+          }
+        }
+
         return bestQuad;
       } catch (e) {
         return null;
@@ -467,15 +551,17 @@
         if (src) src.delete();
         if (gray) gray.delete();
         if (blurred) blurred.delete();
+        if (thresh) thresh.delete();
+        if (closed) closed.delete();
         if (edges) edges.delete();
         if (dilated) dilated.delete();
         if (contours) contours.delete();
         if (hierarchy) hierarchy.delete();
-        if (kernel) kernel.delete();
+        if (kClose) kClose.delete();
+        if (kDilate) kDilate.delete();
       }
     }
 
-    // 5. 네모 안쪽 영역의 시그니처(64x64 흑백) 및 초점 선명도 추출
     function extractInsideSignature(quad) {
       const vw = video.videoWidth;
       const vh = video.videoHeight;
@@ -493,7 +579,6 @@
         gray[j] = (data[i] * 77 + data[i + 1] * 150 + data[i + 2] * 29) >> 8;
       }
 
-      // 초점 선명도 (라플라시안)
       let sharp = 0, cnt = 0;
       for (let y = 1; y < 63; y += 2) {
         for (let x = 1; x < 63; x += 2) {
@@ -512,7 +597,6 @@
       return sum / a.length;
     }
 
-    // 6. 안전 여백(Padding) 적용 후 OpenCV.js 실제 원근 펴기(Warp) + 2P 분할 촬영
     function expandQuad(quad, pad) {
       if (pad <= 0) return quad;
       const cx = (quad[0].x + quad[1].x + quad[2].x + quad[3].x) / 4;
@@ -586,7 +670,6 @@
         if (M) M.delete();
       }
 
-      // 2P 분할 또는 1P 저장
       const fw = warpedCanvas.width;
       const fh = warpedCanvas.height;
       if (scanMode === "2p") {
@@ -621,29 +704,48 @@
       }
     }
 
-    // 7. 오버레이 그리기 (드래그 핸들 포함)
+    // [영역 표시 대폭 개선] 네모가 없을 때도 안내 가이드 영역을 표시하고, 인식 시 외곽선+코너 마커를 선명하게 표시
     function drawOverlay(quad, state) {
-      const rect = overlayCanvas.getBoundingClientRect();
-      if (overlayCanvas.width !== rect.width || overlayCanvas.height !== rect.height) {
-        overlayCanvas.width = rect.width;
-        overlayCanvas.height = rect.height;
+      const { cw, ch } = syncOverlaySize();
+      overlayCtx.clearRect(0, 0, cw, ch);
+
+      if (!quad) {
+        // 안내 가이드라인 표시 (책 배치 위치 기준)
+        const gx = cw * 0.08;
+        const gy = ch * 0.14;
+        const gw = cw * 0.84;
+        const gh = ch * 0.72;
+
+        overlayCtx.save();
+        overlayCtx.setLineDash([10, 8]);
+        overlayCtx.lineWidth = 2;
+        overlayCtx.strokeStyle = "rgba(148, 163, 184, 0.55)";
+        overlayCtx.strokeRect(gx, gy, gw, gh);
+
+        if (scanMode === "2p") {
+          overlayCtx.beginPath();
+          overlayCtx.moveTo(cw / 2, gy);
+          overlayCtx.lineTo(cw / 2, gy + gh);
+          overlayCtx.strokeStyle = "rgba(59, 130, 246, 0.45)";
+          overlayCtx.stroke();
+        }
+        overlayCtx.restore();
+        return;
       }
-      overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
-      if (!quad) return;
 
       const pts = quad.map(p => normToScreen(p));
 
       let strokeColor = "#f59e0b";
-      let fillColor = "rgba(245, 158, 11, 0.12)";
+      let fillColor = "rgba(245, 158, 11, 0.14)";
       if (state === "locking") {
         strokeColor = "#10b981";
-        fillColor = "rgba(16, 185, 129, 0.16)";
+        fillColor = "rgba(16, 185, 129, 0.18)";
       } else if (state === "cooldown") {
         strokeColor = "#3b82f6";
-        fillColor = "rgba(59, 130, 246, 0.14)";
+        fillColor = "rgba(59, 130, 246, 0.15)";
       } else if (isLocked) {
         strokeColor = "#fbbf24";
-        fillColor = "rgba(251, 191, 36, 0.10)";
+        fillColor = "rgba(251, 191, 36, 0.12)";
       }
 
       overlayCtx.beginPath();
@@ -652,11 +754,11 @@
       overlayCtx.closePath();
       overlayCtx.fillStyle = fillColor;
       overlayCtx.fill();
-      overlayCtx.lineWidth = 3;
+      overlayCtx.lineWidth = 3.5;
       overlayCtx.strokeStyle = strokeColor;
       overlayCtx.stroke();
 
-      // 2P 중앙선
+      // 2P 중앙 분할선
       if (scanMode === "2p") {
         const topM = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
         const botM = { x: (pts[3].x + pts[2].x) / 2, y: (pts[3].y + pts[2].y) / 2 };
@@ -670,22 +772,19 @@
         overlayCtx.setLineDash([]);
       }
 
-      // 꼭짓점 핸들 (영역 고정 시 크게 표시해 손가락으로 끌기 쉽게)
-      const r = isLocked ? 14 : 6;
+      // 4개 모서리 코너 핸들
+      const r = isLocked ? 15 : 8;
       for (let i = 0; i < 4; i++) {
         overlayCtx.beginPath();
         overlayCtx.arc(pts[i].x, pts[i].y, r, 0, Math.PI * 2);
-        overlayCtx.fillStyle = isLocked ? "rgba(251, 191, 36, 0.85)" : strokeColor;
+        overlayCtx.fillStyle = isLocked ? "#fbbf24" : strokeColor;
         overlayCtx.fill();
-        if (isLocked) {
-          overlayCtx.lineWidth = 2.5;
-          overlayCtx.strokeStyle = "#fff";
-          overlayCtx.stroke();
-        }
+        overlayCtx.lineWidth = 2.5;
+        overlayCtx.strokeStyle = "#000";
+        overlayCtx.stroke();
       }
     }
 
-    // 8. 메인 루프 (OpenCV 탐지 + 3단계 책장 넘김/유사도 체크)
     let lastTick = 0;
     function mainLoop(now) {
       requestAnimationFrame(mainLoop);
@@ -694,7 +793,6 @@
 
       if (!cvReady || !cameraReady || previewModal.style.display !== "none") return;
 
-      // 영역 결정: 고정 모드면 lockedQuad, 자동 모드면 OpenCV 탐지
       let activeQuad = null;
       if (isLocked) {
         activeQuad = lockedQuad;
@@ -705,7 +803,7 @@
           if (!currentQuad) {
             currentQuad = detected;
           } else {
-            const alpha = 0.35;
+            const alpha = 0.4;
             currentQuad = currentQuad.map((p, i) => ({
               x: p.x * (1 - alpha) + detected[i].x * alpha,
               y: p.y * (1 - alpha) + detected[i].y * alpha
@@ -713,7 +811,7 @@
           }
         } else {
           missedFrames++;
-          if (missedFrames > 4) currentQuad = null;
+          if (missedFrames > 5) currentQuad = null;
         }
         activeQuad = currentQuad;
       }
@@ -721,7 +819,7 @@
       if (!activeQuad) {
         progressFill.style.width = "0%";
         drawOverlay(null, "searching");
-        setStatus("searching", "책을 비추거나 상단 [영역고정]을 누르세요");
+        setStatus("searching", "책 테두리를 맞추거나 [영역고정]을 누르세요");
         prevSig = null;
         stableStartTime = 0;
         return;
@@ -749,13 +847,12 @@
         return;
       }
 
-      // 네모 안쪽 내용 변화 & 선명도 측정
       const { gray, sharpness } = extractInsideSignature(activeQuad);
       const motion = diffSignature(prevSig, gray);
       prevSig = gray;
 
-      // 1단계: 움직임 감지 (책장 넘기는 중)
-      if (motion > 5.5) {
+      // 1단계: 움직임 감지
+      if (motion > 5.0) {
         hasMovedSinceCapture = true;
         stableStartTime = 0;
         progressFill.style.width = "0%";
@@ -764,7 +861,6 @@
         return;
       }
 
-      // 직전 촬영 후 아직 움직임이 없었으면 대기
       if (!hasMovedSinceCapture) {
         progressFill.style.width = "0%";
         drawOverlay(activeQuad, "cooldown");
@@ -772,25 +868,24 @@
         return;
       }
 
-      // 2단계: 정지 안정화 (0.75초)
+      // 2단계: 정지 안정화 (0.65초)
       if (stableStartTime === 0) {
         stableStartTime = ts;
       }
       const elapsed = ts - stableStartTime;
-      const progress = Math.min(1, elapsed / 750);
+      const progress = Math.min(1, elapsed / 650);
       progressFill.style.width = `${Math.round(progress * 100)}%`;
 
       if (progress < 1) {
         drawOverlay(activeQuad, "locking");
-        setStatus("locking", `초점·정지 안정화 중... ${Math.round(progress * 100)}%`);
+        setStatus("locking", `자동 촬영 준비 중... ${Math.round(progress * 100)}%`);
         return;
       }
 
-      // 3단계: 직전 페이지와 실제 내용 비교 (손만 들어왔다 나간 중복 촬영 차단)
+      // 3단계: 직전 페이지와 유사도 비교
       if (lastCapturedSig) {
         const contentDiff = diffSignature(lastCapturedSig, gray);
-        if (contentDiff < 9.0) {
-          // 같은 페이지임! 촬영하지 않고 다시 넘김 대기
+        if (contentDiff < 8.5) {
           hasMovedSinceCapture = false;
           stableStartTime = 0;
           progressFill.style.width = "0%";
@@ -800,23 +895,20 @@
         }
       }
 
-      // 초점 선명도 확인
-      if (sharpness < 3.0) {
+      if (sharpness < 2.5) {
         drawOverlay(activeQuad, "moving");
         setStatus("moving", "초점 맞추는 중...");
         return;
       }
 
-      // 모든 검증 통과 -> 자동 촬영 & 원근 보정 실행!
       captureAndWarp(activeQuad);
       lastCapturedSig = gray;
       hasMovedSinceCapture = false;
       stableStartTime = 0;
-      cooldownUntil = ts + 1400;
+      cooldownUntil = ts + 1300;
       drawOverlay(activeQuad, "cooldown");
     }
 
-    // 9. 4개 모서리 터치 드래그 (영역 고정 모드)
     function getPointerPos(e) {
       const rect = overlayCanvas.getBoundingClientRect();
       const touch = e.touches ? e.touches[0] : e;
@@ -827,7 +919,7 @@
       if (!isLocked) return;
       const pos = getPointerPos(e);
       const pts = lockedQuad.map(p => normToScreen(p));
-      let bestIdx = -1, minDist = 42; // 손가락 터치 여유 반경 42px
+      let bestIdx = -1, minDist = 48;
       for (let i = 0; i < 4; i++) {
         const d = Math.hypot(pts[i].x - pos.x, pts[i].y - pos.y);
         if (d < minDist) { minDist = d; bestIdx = i; }
@@ -861,16 +953,15 @@
     window.addEventListener("mousemove", onPointerMove);
     window.addEventListener("mouseup", onPointerUp);
 
-    // 버튼 이벤트
     lockBtn.addEventListener("click", () => {
       isLocked = !isLocked;
       if (isLocked) {
-        // 현재 자동 인식된 네모가 있으면 그 위치로 바로 고정
         if (currentQuad) {
           lockedQuad = currentQuad.map(p => ({ ...p }));
         }
         lockBtn.textContent = "🔒 고정됨";
         lockBtn.classList.add("active-amber");
+        drawOverlay(lockedQuad, "detected");
         showToast("노란 꼭짓점을 손가락으로 끌어 책에 맞추세요");
       } else {
         lockBtn.textContent = "🔓 영역고정";
